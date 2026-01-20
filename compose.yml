@@ -1,0 +1,50 @@
+# Docker Compose for local development
+# Usage: docker compose up -d
+
+services:
+  # PostgreSQL with pgvector extension
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: catchup-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: catchup_feed
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # catchup-ai gRPC server
+  catchup-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: catchup-ai
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=catchup_feed
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+    ports:
+      - "50051:50051"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
