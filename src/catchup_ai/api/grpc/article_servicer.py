@@ -11,7 +11,8 @@ from catchup_ai.core.embedding import (
     ArticleEmbeddingInput,
     ArticleVectorRepository,
     EmbeddingError,
-    OpenAIEmbeddingAdapter,
+    EmbeddingService,
+    create_embedding_service,
 )
 from catchup_ai.infra.db.session import get_session
 
@@ -22,11 +23,18 @@ class ArticleAIServicer(article_pb2_grpc.ArticleAIServicer):
     """gRPC servicer for ArticleAI service.
 
     Implements all RPC methods defined in article.proto.
+    Uses factory pattern to create embedding service based on configuration.
     """
 
-    def __init__(self):
-        """Initialize servicer with required services."""
-        self._embedding_service = OpenAIEmbeddingAdapter()
+    def __init__(self, embedding_service: EmbeddingService | None = None):
+        """Initialize servicer with required services.
+
+        Args:
+            embedding_service: Optional embedding service. If None, creates
+                               one using the factory based on configuration.
+        """
+        # Use factory to create service based on EMBEDDING_PROVIDER config
+        self._embedding_service = embedding_service or create_embedding_service()
         self._logger = logger.bind(servicer="article_ai")
 
     def EmbedArticle(

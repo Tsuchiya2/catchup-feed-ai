@@ -40,6 +40,10 @@ dev = [
     "jupyter>=1.0.0",
     "ipykernel>=6.0.0",
 ]
+# Voyage AI support (Anthropic recommended embedding provider)
+voyage = [
+    "httpx>=0.27.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
