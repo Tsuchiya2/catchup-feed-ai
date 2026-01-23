@@ -6,7 +6,6 @@ All settings are validated at startup.
 
 from enum import Enum
 from functools import lru_cache
-from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,28 +31,6 @@ class EmbeddingSettings(BaseSettings):
         default=1536,
         description="Dimension of embedding vectors",
     )
-
-
-class DatabaseSettings(BaseSettings):
-    """PostgreSQL database configuration."""
-
-    model_config = SettingsConfigDict(env_prefix="DB_")
-
-    host: str = Field(default="localhost", description="Database host")
-    port: int = Field(default=5432, description="Database port")
-    name: str = Field(default="catchup_feed", description="Database name")
-    user: str = Field(default="postgres", description="Database user")
-    password: str = Field(default="postgres", description="Database password")
-
-    @property
-    def url(self) -> str:
-        """Generate database URL for SQLAlchemy."""
-        return f"postgresql+psycopg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
-
-    @property
-    def async_url(self) -> str:
-        """Generate async database URL for SQLAlchemy."""
-        return f"postgresql+psycopg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
 
 
 class OpenAISettings(BaseSettings):
@@ -131,6 +108,21 @@ class GrpcSettings(BaseSettings):
         return f"{self.host}:{self.port}"
 
 
+class BackendSettings(BaseSettings):
+    """Backend gRPC client configuration for connecting to catchup-feed-backend."""
+
+    model_config = SettingsConfigDict(env_prefix="BACKEND_")
+
+    grpc_host: str = Field(default="localhost", description="Backend gRPC server host")
+    grpc_port: int = Field(default=50052, description="Backend gRPC server port")
+    grpc_timeout: float = Field(default=30.0, description="gRPC call timeout in seconds")
+
+    @property
+    def grpc_address(self) -> str:
+        """Generate backend gRPC address."""
+        return f"{self.grpc_host}:{self.grpc_port}"
+
+
 class Settings(BaseSettings):
     """Main application settings."""
 
@@ -152,11 +144,6 @@ class Settings(BaseSettings):
         return EmbeddingSettings()
 
     @property
-    def database(self) -> DatabaseSettings:
-        """Database settings."""
-        return DatabaseSettings()
-
-    @property
     def openai(self) -> OpenAISettings:
         """OpenAI settings."""
         return OpenAISettings()
@@ -170,6 +157,11 @@ class Settings(BaseSettings):
     def grpc(self) -> GrpcSettings:
         """gRPC settings."""
         return GrpcSettings()
+
+    @property
+    def backend(self) -> BackendSettings:
+        """Backend service settings."""
+        return BackendSettings()
 
 
 @lru_cache

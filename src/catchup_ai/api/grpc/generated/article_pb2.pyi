@@ -7,28 +7,38 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class EmbedArticleRequest(_message.Message):
-    __slots__ = ("article_id", "title", "content", "url")
+    __slots__ = ("article_id", "title", "content", "url", "embedding_type")
     ARTICLE_ID_FIELD_NUMBER: _ClassVar[int]
     TITLE_FIELD_NUMBER: _ClassVar[int]
     CONTENT_FIELD_NUMBER: _ClassVar[int]
     URL_FIELD_NUMBER: _ClassVar[int]
+    EMBEDDING_TYPE_FIELD_NUMBER: _ClassVar[int]
     article_id: int
     title: str
     content: str
     url: str
-    def __init__(self, article_id: _Optional[int] = ..., title: _Optional[str] = ..., content: _Optional[str] = ..., url: _Optional[str] = ...) -> None: ...
+    embedding_type: str
+    def __init__(self, article_id: _Optional[int] = ..., title: _Optional[str] = ..., content: _Optional[str] = ..., url: _Optional[str] = ..., embedding_type: _Optional[str] = ...) -> None: ...
 
 class EmbedArticleResponse(_message.Message):
-    __slots__ = ("article_id", "success", "error_message", "embedding_dimension")
+    __slots__ = ("article_id", "success", "error_message", "embedding_dimension", "embedding", "provider", "model", "embedding_type")
     ARTICLE_ID_FIELD_NUMBER: _ClassVar[int]
     SUCCESS_FIELD_NUMBER: _ClassVar[int]
     ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
     EMBEDDING_DIMENSION_FIELD_NUMBER: _ClassVar[int]
+    EMBEDDING_FIELD_NUMBER: _ClassVar[int]
+    PROVIDER_FIELD_NUMBER: _ClassVar[int]
+    MODEL_FIELD_NUMBER: _ClassVar[int]
+    EMBEDDING_TYPE_FIELD_NUMBER: _ClassVar[int]
     article_id: int
     success: bool
     error_message: str
     embedding_dimension: int
-    def __init__(self, article_id: _Optional[int] = ..., success: bool = ..., error_message: _Optional[str] = ..., embedding_dimension: _Optional[int] = ...) -> None: ...
+    embedding: _containers.RepeatedScalarFieldContainer[float]
+    provider: str
+    model: str
+    embedding_type: str
+    def __init__(self, article_id: _Optional[int] = ..., success: bool = ..., error_message: _Optional[str] = ..., embedding_dimension: _Optional[int] = ..., embedding: _Optional[_Iterable[float]] = ..., provider: _Optional[str] = ..., model: _Optional[str] = ..., embedding_type: _Optional[str] = ...) -> None: ...
 
 class SearchSimilarRequest(_message.Message):
     __slots__ = ("query", "article_id", "limit", "min_similarity")

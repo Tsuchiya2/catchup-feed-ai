@@ -35,6 +35,9 @@ message EmbedArticleRequest {
   string content = 3;
   // Article URL (optional, for reference)
   string url = 4;
+  // Type of content to embed (default: "content")
+  // Valid values: "title", "content", "summary"
+  string embedding_type = 5;
 }
 
 message EmbedArticleResponse {
@@ -46,6 +49,14 @@ message EmbedArticleResponse {
   string error_message = 3;
   // Dimension of the embedding vector (e.g., 1536 for text-embedding-3-small)
   int32 embedding_dimension = 4;
+  // The generated embedding vector (caller is responsible for storage)
+  repeated float embedding = 5;
+  // Embedding provider used (e.g., "openai", "voyage")
+  string provider = 6;
+  // Model name used (e.g., "text-embedding-3-small", "voyage-3")
+  string model = 7;
+  // Type of content that was embedded (e.g., "title", "content", "summary")
+  string embedding_type = 8;
 }
 
 // ============================================================================

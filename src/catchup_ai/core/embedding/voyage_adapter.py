@@ -16,7 +16,6 @@ To use this adapter:
 
 import random
 import time
-from typing import Any
 
 import structlog
 
@@ -168,6 +167,7 @@ class VoyageEmbeddingAdapter(EmbeddingService):
                 EmbeddingResult(
                     vector=item["embedding"],
                     model=self._model,
+                    provider="voyage",
                     tokens_used=data.get("usage", {}).get("total_tokens", 0)
                     // len(texts),
                 )

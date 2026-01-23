@@ -20,11 +20,6 @@ dependencies = [
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
 
-    # Database
-    "sqlalchemy>=2.0.0",
-    "pgvector>=0.3.0",
-    "psycopg[binary]>=3.0.0",
-
     # Utilities
     "python-dotenv>=1.0.0",
     "structlog>=24.0.0",
@@ -52,9 +47,19 @@ build-backend = "uv_build"
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# Exclude auto-generated code
+exclude = [
+    "src/catchup_ai/api/grpc/generated/",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+# Ignore PascalCase method names (required for gRPC servicers)
+ignore = ["N802"]
+
+[tool.ruff.lint.per-file-ignores]
+# gRPC servicers override methods with PascalCase names
+"*_servicer.py" = ["N802"]
 
 [tool.mypy]
 python_version = "3.13"

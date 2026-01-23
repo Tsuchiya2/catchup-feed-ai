@@ -1,0 +1,39 @@
+language_preferences:
+  documentation_language: en
+  terminal_output_language: ja
+  save_dual_language_docs: false
+
+docker:
+  enabled: true
+  compose_file: compose.yml
+  main_service: catchup-ai
+  exec_prefix: docker compose exec catchup-ai
+
+project:
+  type: python
+  name: catchup-ai
+  language: Python
+  frameworks:
+    - gRPC
+    - OpenAI
+    - pydantic
+  test_framework: pytest
+  linter: ruff
+  type_checker: mypy
+  package_manager: uv
+
+setup_completed:
+  status: completed
+  completed_at: "2026-01-24T00:00:00Z"
+  docs_generated:
+    - docs/product-requirements.md
+    - docs/functional-design.md
+    - docs/development-guidelines.md
+    - docs/repository-structure.md
+    - docs/architecture.md
+    - docs/glossary.md
+  skills_generated:
+    - .claude/skills/python-standards/SKILL.md
+    - .claude/skills/grpc-standards/SKILL.md
+    - .claude/skills/test-standards/SKILL.md
+    - .claude/skills/security-standards/SKILL.md

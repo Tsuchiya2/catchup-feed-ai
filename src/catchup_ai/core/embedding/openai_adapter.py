@@ -4,11 +4,12 @@ Uses text-embedding-3-small model for generating embeddings.
 Includes retry logic for handling transient failures.
 """
 
+import random
 import time
-from typing import Any
 
 import structlog
-from openai import OpenAI, RateLimitError as OpenAIRateLimitError
+from openai import OpenAI
+from openai import RateLimitError as OpenAIRateLimitError
 
 from catchup_ai.infra.config.settings import get_settings
 
@@ -18,8 +19,6 @@ from .service import (
     EmbeddingService,
     RateLimitError,
 )
-
-import random
 
 logger = structlog.get_logger()
 
@@ -179,6 +178,7 @@ class OpenAIEmbeddingAdapter(EmbeddingService):
                 EmbeddingResult(
                     vector=data.embedding,
                     model=response.model,
+                    provider="openai",
                     tokens_used=response.usage.total_tokens // len(texts),
                 )
             )

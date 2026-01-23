@@ -1,6 +1,11 @@
 """Embedding module for catchup-ai.
 
-Provides text embedding generation and vector search functionality.
+Provides text embedding generation functionality.
+
+Architecture note:
+    catchup-ai generates embeddings, but does NOT store them.
+    Storage and similarity search are delegated to catchup-feed-backend
+    via gRPC (EmbeddingClient).
 
 Supported providers:
 - OpenAI (text-embedding-3-small)
@@ -12,11 +17,13 @@ Usage:
     # Uses provider from EMBEDDING_PROVIDER env var
     service = create_embedding_service()
     result = service.embed_text("Hello, world!")
+
+    # Result includes: vector, model, provider, tokens_used
+    print(result.provider)  # "openai" or "voyage"
 """
 
 from .factory import create_embedding_service, get_embedding_service
 from .openai_adapter import OpenAIEmbeddingAdapter
-from .repository import ArticleVectorRepository, SimilarArticleResult
 from .service import (
     ArticleEmbeddingInput,
     EmbeddingError,
@@ -40,9 +47,6 @@ __all__ = [
     # Implementations
     "OpenAIEmbeddingAdapter",
     # "VoyageEmbeddingAdapter",  # Import directly if needed
-    # Repository
-    "ArticleVectorRepository",
-    "SimilarArticleResult",
     # Exceptions
     "EmbeddingError",
     "RateLimitError",

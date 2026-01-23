@@ -1,26 +1,11 @@
 # Docker Compose for local development
 # Usage: docker compose up -d
+#
+# Architecture note:
+#   catchup-ai is a pure AI service (embedding generation, RAG).
+#   Database operations are handled by catchup-feed-backend (Go service).
 
 services:
-  # PostgreSQL with pgvector extension
-  db:
-    image: pgvector/pgvector:pg16
-    container_name: catchup-db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: catchup_feed
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # catchup-ai gRPC server
   catchup-ai:
     build:
@@ -31,20 +16,18 @@ services:
       - ENVIRONMENT=development
       - DEBUG=true
       - LOG_LEVEL=DEBUG
+      # Embedding provider (openai or voyage)
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_NAME=catchup_feed
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY:-}
+      # gRPC server
       - GRPC_HOST=0.0.0.0
       - GRPC_PORT=50051
+      # Backend connection (for SearchSimilar)
+      - BACKEND_GRPC_HOST=${BACKEND_GRPC_HOST:-host.docker.internal}
+      - BACKEND_GRPC_PORT=${BACKEND_GRPC_PORT:-50052}
     ports:
       - "50051:50051"
-    depends_on:
-      db:
-        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
-
-volumes:
-  postgres_data:

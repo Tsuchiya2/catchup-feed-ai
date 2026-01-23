@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rarticle.proto\x12\rcatchup.ai.v1\"V\n\x13\x45mbedArticleRequest\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t\x12\x0b\n\x03url\x18\x04 \x01(\t\"o\n\x14\x45mbedArticleResponse\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\x0f\n\x07success\x18\x02 \x01(\x08\x12\x15\n\rerror_message\x18\x03 \x01(\t\x12\x1b\n\x13\x65mbedding_dimension\x18\x04 \x01(\x05\"q\n\x14SearchSimilarRequest\x12\x0f\n\x05query\x18\x01 \x01(\tH\x00\x12\x14\n\narticle_id\x18\x02 \x01(\x03H\x00\x12\r\n\x05limit\x18\x03 \x01(\x05\x12\x16\n\x0emin_similarity\x18\x04 \x01(\x02\x42\x0b\n\tsearch_by\"H\n\x15SearchSimilarResponse\x12/\n\x08\x61rticles\x18\x01 \x03(\x0b\x32\x1d.catchup.ai.v1.SimilarArticle\"k\n\x0eSimilarArticle\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0b\n\x03url\x18\x03 \x01(\t\x12\x18\n\x10similarity_score\x18\x04 \x01(\x02\x12\x0f\n\x07snippet\x18\x05 \x01(\t\"\x88\x01\n\x14QueryArticlesRequest\x12\x10\n\x08question\x18\x01 \x01(\t\x12\x1c\n\x14max_context_articles\x18\x02 \x01(\x05\x12,\n\ndate_range\x18\x03 \x01(\x0b\x32\x18.catchup.ai.v1.DateRange\x12\x12\n\ncategories\x18\x04 \x03(\t\"1\n\tDateRange\x12\x12\n\nstart_date\x18\x01 \x01(\t\x12\x10\n\x08\x65nd_date\x18\x02 \x01(\t\"r\n\x15QueryArticlesResponse\x12\x0e\n\x06\x61nswer\x18\x01 \x01(\t\x12\x35\n\x0fsource_articles\x18\x02 \x03(\x0b\x32\x1c.catchup.ai.v1.SourceArticle\x12\x12\n\nconfidence\x18\x03 \x01(\x02\"X\n\rSourceArticle\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0b\n\x03url\x18\x03 \x01(\t\x12\x17\n\x0frelevance_score\x18\x04 \x01(\x02\"\x80\x01\n\x1cGenerateWeeklySummaryRequest\x12\x0e\n\x06period\x18\x01 \x01(\t\x12,\n\ndate_range\x18\x02 \x01(\x0b\x32\x18.catchup.ai.v1.DateRange\x12\x0e\n\x06topics\x18\x03 \x03(\t\x12\x12\n\nmax_length\x18\x04 \x01(\x05\"\xa7\x01\n\x1dGenerateWeeklySummaryResponse\x12\x0f\n\x07summary\x18\x01 \x01(\t\x12\x12\n\nhighlights\x18\x02 \x03(\t\x12/\n\x08\x61rticles\x18\x03 \x03(\x0b\x32\x1d.catchup.ai.v1.SummaryArticle\x12\x30\n\x0e\x63overed_period\x18\x04 \x01(\x0b\x32\x18.catchup.ai.v1.DateRange\"R\n\x0eSummaryArticle\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0b\n\x03url\x18\x03 \x01(\t\x12\x10\n\x08\x63\x61tegory\x18\x04 \x01(\t\"L\n\x16\x43lassifyArticleRequest\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t\"q\n\x17\x43lassifyArticleResponse\x12\x10\n\x08\x63\x61tegory\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12\x30\n\nall_scores\x18\x03 \x03(\x0b\x32\x1c.catchup.ai.v1.CategoryScore\"0\n\rCategoryScore\x12\x10\n\x08\x63\x61tegory\x18\x01 \x01(\t\x12\r\n\x05score\x18\x02 \x01(\x02\x32\xf2\x03\n\tArticleAI\x12W\n\x0c\x45mbedArticle\x12\".catchup.ai.v1.EmbedArticleRequest\x1a#.catchup.ai.v1.EmbedArticleResponse\x12Z\n\rSearchSimilar\x12#.catchup.ai.v1.SearchSimilarRequest\x1a$.catchup.ai.v1.SearchSimilarResponse\x12Z\n\rQueryArticles\x12#.catchup.ai.v1.QueryArticlesRequest\x1a$.catchup.ai.v1.QueryArticlesResponse\x12r\n\x15GenerateWeeklySummary\x12+.catchup.ai.v1.GenerateWeeklySummaryRequest\x1a,.catchup.ai.v1.GenerateWeeklySummaryResponse\x12`\n\x0f\x43lassifyArticle\x12%.catchup.ai.v1.ClassifyArticleRequest\x1a&.catchup.ai.v1.ClassifyArticleResponseBBZ@github.com/tsuchiya-yu2/catchup-feed-backend/proto/catchup/ai/v1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rarticle.proto\x12\rcatchup.ai.v1\"n\n\x13\x45mbedArticleRequest\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t\x12\x0b\n\x03url\x18\x04 \x01(\t\x12\x16\n\x0e\x65mbedding_type\x18\x05 \x01(\t\"\xbb\x01\n\x14\x45mbedArticleResponse\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\x0f\n\x07success\x18\x02 \x01(\x08\x12\x15\n\rerror_message\x18\x03 \x01(\t\x12\x1b\n\x13\x65mbedding_dimension\x18\x04 \x01(\x05\x12\x11\n\tembedding\x18\x05 \x03(\x02\x12\x10\n\x08provider\x18\x06 \x01(\t\x12\r\n\x05model\x18\x07 \x01(\t\x12\x16\n\x0e\x65mbedding_type\x18\x08 \x01(\t\"q\n\x14SearchSimilarRequest\x12\x0f\n\x05query\x18\x01 \x01(\tH\x00\x12\x14\n\narticle_id\x18\x02 \x01(\x03H\x00\x12\r\n\x05limit\x18\x03 \x01(\x05\x12\x16\n\x0emin_similarity\x18\x04 \x01(\x02\x42\x0b\n\tsearch_by\"H\n\x15SearchSimilarResponse\x12/\n\x08\x61rticles\x18\x01 \x03(\x0b\x32\x1d.catchup.ai.v1.SimilarArticle\"k\n\x0eSimilarArticle\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0b\n\x03url\x18\x03 \x01(\t\x12\x18\n\x10similarity_score\x18\x04 \x01(\x02\x12\x0f\n\x07snippet\x18\x05 \x01(\t\"\x88\x01\n\x14QueryArticlesRequest\x12\x10\n\x08question\x18\x01 \x01(\t\x12\x1c\n\x14max_context_articles\x18\x02 \x01(\x05\x12,\n\ndate_range\x18\x03 \x01(\x0b\x32\x18.catchup.ai.v1.DateRange\x12\x12\n\ncategories\x18\x04 \x03(\t\"1\n\tDateRange\x12\x12\n\nstart_date\x18\x01 \x01(\t\x12\x10\n\x08\x65nd_date\x18\x02 \x01(\t\"r\n\x15QueryArticlesResponse\x12\x0e\n\x06\x61nswer\x18\x01 \x01(\t\x12\x35\n\x0fsource_articles\x18\x02 \x03(\x0b\x32\x1c.catchup.ai.v1.SourceArticle\x12\x12\n\nconfidence\x18\x03 \x01(\x02\"X\n\rSourceArticle\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0b\n\x03url\x18\x03 \x01(\t\x12\x17\n\x0frelevance_score\x18\x04 \x01(\x02\"\x80\x01\n\x1cGenerateWeeklySummaryRequest\x12\x0e\n\x06period\x18\x01 \x01(\t\x12,\n\ndate_range\x18\x02 \x01(\x0b\x32\x18.catchup.ai.v1.DateRange\x12\x0e\n\x06topics\x18\x03 \x03(\t\x12\x12\n\nmax_length\x18\x04 \x01(\x05\"\xa7\x01\n\x1dGenerateWeeklySummaryResponse\x12\x0f\n\x07summary\x18\x01 \x01(\t\x12\x12\n\nhighlights\x18\x02 \x03(\t\x12/\n\x08\x61rticles\x18\x03 \x03(\x0b\x32\x1d.catchup.ai.v1.SummaryArticle\x12\x30\n\x0e\x63overed_period\x18\x04 \x01(\x0b\x32\x18.catchup.ai.v1.DateRange\"R\n\x0eSummaryArticle\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0b\n\x03url\x18\x03 \x01(\t\x12\x10\n\x08\x63\x61tegory\x18\x04 \x01(\t\"L\n\x16\x43lassifyArticleRequest\x12\x12\n\narticle_id\x18\x01 \x01(\x03\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t\"q\n\x17\x43lassifyArticleResponse\x12\x10\n\x08\x63\x61tegory\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12\x30\n\nall_scores\x18\x03 \x03(\x0b\x32\x1c.catchup.ai.v1.CategoryScore\"0\n\rCategoryScore\x12\x10\n\x08\x63\x61tegory\x18\x01 \x01(\t\x12\r\n\x05score\x18\x02 \x01(\x02\x32\xf2\x03\n\tArticleAI\x12W\n\x0c\x45mbedArticle\x12\".catchup.ai.v1.EmbedArticleRequest\x1a#.catchup.ai.v1.EmbedArticleResponse\x12Z\n\rSearchSimilar\x12#.catchup.ai.v1.SearchSimilarRequest\x1a$.catchup.ai.v1.SearchSimilarResponse\x12Z\n\rQueryArticles\x12#.catchup.ai.v1.QueryArticlesRequest\x1a$.catchup.ai.v1.QueryArticlesResponse\x12r\n\x15GenerateWeeklySummary\x12+.catchup.ai.v1.GenerateWeeklySummaryRequest\x1a,.catchup.ai.v1.GenerateWeeklySummaryResponse\x12`\n\x0f\x43lassifyArticle\x12%.catchup.ai.v1.ClassifyArticleRequest\x1a&.catchup.ai.v1.ClassifyArticleResponseBBZ@github.com/tsuchiya-yu2/catchup-feed-backend/proto/catchup/ai/v1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,35 +33,35 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z@github.com/tsuchiya-yu2/catchup-feed-backend/proto/catchup/ai/v1'
   _globals['_EMBEDARTICLEREQUEST']._serialized_start=32
-  _globals['_EMBEDARTICLEREQUEST']._serialized_end=118
-  _globals['_EMBEDARTICLERESPONSE']._serialized_start=120
-  _globals['_EMBEDARTICLERESPONSE']._serialized_end=231
-  _globals['_SEARCHSIMILARREQUEST']._serialized_start=233
-  _globals['_SEARCHSIMILARREQUEST']._serialized_end=346
-  _globals['_SEARCHSIMILARRESPONSE']._serialized_start=348
-  _globals['_SEARCHSIMILARRESPONSE']._serialized_end=420
-  _globals['_SIMILARARTICLE']._serialized_start=422
-  _globals['_SIMILARARTICLE']._serialized_end=529
-  _globals['_QUERYARTICLESREQUEST']._serialized_start=532
-  _globals['_QUERYARTICLESREQUEST']._serialized_end=668
-  _globals['_DATERANGE']._serialized_start=670
-  _globals['_DATERANGE']._serialized_end=719
-  _globals['_QUERYARTICLESRESPONSE']._serialized_start=721
-  _globals['_QUERYARTICLESRESPONSE']._serialized_end=835
-  _globals['_SOURCEARTICLE']._serialized_start=837
-  _globals['_SOURCEARTICLE']._serialized_end=925
-  _globals['_GENERATEWEEKLYSUMMARYREQUEST']._serialized_start=928
-  _globals['_GENERATEWEEKLYSUMMARYREQUEST']._serialized_end=1056
-  _globals['_GENERATEWEEKLYSUMMARYRESPONSE']._serialized_start=1059
-  _globals['_GENERATEWEEKLYSUMMARYRESPONSE']._serialized_end=1226
-  _globals['_SUMMARYARTICLE']._serialized_start=1228
-  _globals['_SUMMARYARTICLE']._serialized_end=1310
-  _globals['_CLASSIFYARTICLEREQUEST']._serialized_start=1312
-  _globals['_CLASSIFYARTICLEREQUEST']._serialized_end=1388
-  _globals['_CLASSIFYARTICLERESPONSE']._serialized_start=1390
-  _globals['_CLASSIFYARTICLERESPONSE']._serialized_end=1503
-  _globals['_CATEGORYSCORE']._serialized_start=1505
-  _globals['_CATEGORYSCORE']._serialized_end=1553
-  _globals['_ARTICLEAI']._serialized_start=1556
-  _globals['_ARTICLEAI']._serialized_end=2054
+  _globals['_EMBEDARTICLEREQUEST']._serialized_end=142
+  _globals['_EMBEDARTICLERESPONSE']._serialized_start=145
+  _globals['_EMBEDARTICLERESPONSE']._serialized_end=332
+  _globals['_SEARCHSIMILARREQUEST']._serialized_start=334
+  _globals['_SEARCHSIMILARREQUEST']._serialized_end=447
+  _globals['_SEARCHSIMILARRESPONSE']._serialized_start=449
+  _globals['_SEARCHSIMILARRESPONSE']._serialized_end=521
+  _globals['_SIMILARARTICLE']._serialized_start=523
+  _globals['_SIMILARARTICLE']._serialized_end=630
+  _globals['_QUERYARTICLESREQUEST']._serialized_start=633
+  _globals['_QUERYARTICLESREQUEST']._serialized_end=769
+  _globals['_DATERANGE']._serialized_start=771
+  _globals['_DATERANGE']._serialized_end=820
+  _globals['_QUERYARTICLESRESPONSE']._serialized_start=822
+  _globals['_QUERYARTICLESRESPONSE']._serialized_end=936
+  _globals['_SOURCEARTICLE']._serialized_start=938
+  _globals['_SOURCEARTICLE']._serialized_end=1026
+  _globals['_GENERATEWEEKLYSUMMARYREQUEST']._serialized_start=1029
+  _globals['_GENERATEWEEKLYSUMMARYREQUEST']._serialized_end=1157
+  _globals['_GENERATEWEEKLYSUMMARYRESPONSE']._serialized_start=1160
+  _globals['_GENERATEWEEKLYSUMMARYRESPONSE']._serialized_end=1327
+  _globals['_SUMMARYARTICLE']._serialized_start=1329
+  _globals['_SUMMARYARTICLE']._serialized_end=1411
+  _globals['_CLASSIFYARTICLEREQUEST']._serialized_start=1413
+  _globals['_CLASSIFYARTICLEREQUEST']._serialized_end=1489
+  _globals['_CLASSIFYARTICLERESPONSE']._serialized_start=1491
+  _globals['_CLASSIFYARTICLERESPONSE']._serialized_end=1604
+  _globals['_CATEGORYSCORE']._serialized_start=1606
+  _globals['_CATEGORYSCORE']._serialized_end=1654
+  _globals['_ARTICLEAI']._serialized_start=1657
+  _globals['_ARTICLEAI']._serialized_end=2155
 # @@protoc_insertion_point(module_scope)

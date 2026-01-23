@@ -15,11 +15,13 @@ class EmbeddingResult:
     Attributes:
         vector: The embedding vector
         model: The model used to generate the embedding
+        provider: The provider that generated the embedding (e.g., "openai", "voyage")
         tokens_used: Number of tokens processed
     """
 
     vector: list[float]
     model: str
+    provider: str
     tokens_used: int
 
     @property
