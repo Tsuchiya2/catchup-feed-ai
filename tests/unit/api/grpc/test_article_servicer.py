@@ -205,26 +205,6 @@ class TestSearchSimilar:
 class TestUnimplementedMethods:
     """Tests for placeholder RPC methods."""
 
-    def test_query_articles_not_implemented(self, servicer, mock_context):
-        """Test that QueryArticles returns UNIMPLEMENTED."""
-        request = article_pb2.QueryArticlesRequest(
-            question="What is AI?",
-        )
-
-        servicer.QueryArticles(request, mock_context)
-
-        mock_context.set_code.assert_called()
-        mock_context.set_details.assert_called()
-
-    def test_generate_weekly_summary_not_implemented(self, servicer, mock_context):
-        """Test that GenerateWeeklySummary returns UNIMPLEMENTED."""
-        request = article_pb2.GenerateWeeklySummaryRequest()
-
-        servicer.GenerateWeeklySummary(request, mock_context)
-
-        mock_context.set_code.assert_called()
-        mock_context.set_details.assert_called()
-
     def test_classify_article_not_implemented(self, servicer, mock_context):
         """Test that ClassifyArticle returns UNIMPLEMENTED."""
         request = article_pb2.ClassifyArticleRequest(

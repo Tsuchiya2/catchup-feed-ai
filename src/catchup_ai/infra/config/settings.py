@@ -61,6 +61,26 @@ class OpenAISettings(BaseSettings):
         return v
 
 
+class AnthropicSettings(BaseSettings):
+    """Anthropic API configuration for Claude models."""
+
+    model_config = SettingsConfigDict(env_prefix="ANTHROPIC_")
+
+    api_key: str = Field(default="", description="Anthropic API key")
+    model: str = Field(
+        default="claude-sonnet-4-20250514",
+        description="Claude model to use for RAG/summarization",
+    )
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, v: str) -> str:
+        # Allow empty string when not using Claude
+        if v and not v.startswith("sk-ant-"):
+            raise ValueError("Invalid Anthropic API key format (must start with sk-ant-)")
+        return v
+
+
 class VoyageSettings(BaseSettings):
     """Voyage AI API configuration (Anthropic recommended embedding provider).
 
@@ -109,17 +129,24 @@ class GrpcSettings(BaseSettings):
 
 
 class BackendSettings(BaseSettings):
-    """Backend gRPC client configuration for connecting to catchup-feed-backend."""
+    """Backend gRPC connection settings."""
 
-    model_config = SettingsConfigDict(env_prefix="BACKEND_")
+    model_config = SettingsConfigDict(
+        env_prefix="BACKEND_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
-    grpc_host: str = Field(default="localhost", description="Backend gRPC server host")
-    grpc_port: int = Field(default=50052, description="Backend gRPC server port")
-    grpc_timeout: float = Field(default=30.0, description="gRPC call timeout in seconds")
+    grpc_host: str = Field(default="localhost")
+    grpc_port: int = Field(default=50052)
+
+    # ★ Tailscale 使用時は TLS 不要（WireGuard で暗号化済み）
+    grpc_tls: bool = Field(default=False)
 
     @property
     def grpc_address(self) -> str:
-        """Generate backend gRPC address."""
+        """Get the gRPC server address."""
         return f"{self.grpc_host}:{self.grpc_port}"
 
 
@@ -152,6 +179,11 @@ class Settings(BaseSettings):
     def voyage(self) -> VoyageSettings:
         """Voyage AI settings (Anthropic recommended)."""
         return VoyageSettings()
+
+    @property
+    def anthropic(self) -> AnthropicSettings:
+        """Anthropic Claude settings."""
+        return AnthropicSettings()
 
     @property
     def grpc(self) -> GrpcSettings:

@@ -70,3 +70,22 @@ logs/
 *.pem
 *.key
 credentials.json
+
+# Local environment overrides (personal settings)
+.env.*.copy
+compose.override.yml
+
+# EDAF steering documents (work-in-progress artifacts)
+.steering/
+
+# Personal notes and task files
+*_task.md
+TODO.md
+
+# GCP credentials and service accounts
+*-credentials.json
+service-account*.json
+
+# Build artifacts
+*.tar
+*.tar.gz

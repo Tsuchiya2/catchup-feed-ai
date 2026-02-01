@@ -1,0 +1,82 @@
+# Cloud Run service definition with Tailscale sidecar
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: catchup-ai
+  annotations:
+    run.googleapis.com/launch-stage: BETA
+spec:
+  template:
+    metadata:
+      annotations:
+        # Tailscale sidecar を有効化
+        run.googleapis.com/container-dependencies: '{"catchup-ai":["tailscale"]}'
+        # 最小インスタンス数（コールドスタート回避したい場合は 1 に）
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "2"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+        # ===== Main container: catchup-ai =====
+        - name: catchup-ai
+          image: asia-northeast1-docker.pkg.dev/PROJECT_ID/catchup-ai/catchup-ai:latest
+          ports:
+            - name: h2c  # gRPC (HTTP/2 cleartext)
+              containerPort: 50053
+          env:
+            - name: GRPC_PORT
+              value: "50053"
+            # Tailscale 経由で backend に接続（TLS 不要）
+            - name: BACKEND_GRPC_HOST
+              value: "TAILSCALE_IP"  # RPi5 の Tailscale IP に置き換え
+            - name: BACKEND_GRPC_PORT
+              value: "50052"
+            - name: BACKEND_GRPC_TLS
+              value: "false"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-api-key
+                  key: latest
+            # LLM Provider: OpenAI を使用
+            - name: LLM_PROVIDER
+              value: "openai"
+            - name: LLM_MODEL
+              value: "gpt-5-mini"
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          startupProbe:
+            grpc:
+              port: 50053
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+
+        # ===== Sidecar: Tailscale =====
+        - name: tailscale
+          image: ghcr.io/tailscale/tailscale:latest
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-auth-key
+                  key: latest
+            - name: TS_STATE_DIR
+              value: /var/lib/tailscale
+            - name: TS_USERSPACE
+              value: "true"
+            - name: TS_AUTH_ONCE
+              value: "true"
+          resources:
+            limits:
+              cpu: "0.5"
+              memory: 128Mi
+          volumeMounts:
+            - name: tailscale-state
+              mountPath: /var/lib/tailscale
+      volumes:
+        - name: tailscale-state
+          emptyDir: {}

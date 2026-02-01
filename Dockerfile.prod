@@ -1,0 +1,56 @@
+# ===== Build stage =====
+FROM python:3.13-slim AS builder
+
+WORKDIR /app
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Install dependencies (without dev dependencies)
+COPY pyproject.toml uv.lock README.md ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --no-dev
+
+# Copy source code
+COPY src ./src
+COPY proto ./proto
+
+# Install the project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
+
+# ===== Runtime stage =====
+FROM python:3.13-slim AS runtime
+
+WORKDIR /app
+
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash --uid 1000 app
+
+# Copy virtual environment from builder
+COPY --from=builder --chown=app:app /app/.venv /app/.venv
+
+# Copy source code (needed for the module)
+COPY --from=builder --chown=app:app /app/src /app/src
+
+# Set environment variables
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app/src"
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Default port for gRPC server
+ENV GRPC_PORT=50053
+
+# Switch to non-root user
+USER app
+
+# Expose gRPC port
+EXPOSE 50053
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import grpc; ch = grpc.insecure_channel('localhost:50053'); grpc.channel_ready_future(ch).result(timeout=5)" || exit 1
+
+# Run gRPC server
+CMD ["python", "-m", "catchup_ai.api.grpc.server"]

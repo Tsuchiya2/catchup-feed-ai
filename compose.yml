@@ -10,7 +10,7 @@ services:
   catchup-ai:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.prod
     container_name: catchup-ai
     environment:
       - ENVIRONMENT=development
@@ -22,12 +22,12 @@ services:
       - VOYAGE_API_KEY=${VOYAGE_API_KEY:-}
       # gRPC server
       - GRPC_HOST=0.0.0.0
-      - GRPC_PORT=50051
+      - GRPC_PORT=50053
       # Backend connection (for SearchSimilar)
       - BACKEND_GRPC_HOST=${BACKEND_GRPC_HOST:-host.docker.internal}
       - BACKEND_GRPC_PORT=${BACKEND_GRPC_PORT:-50052}
     ports:
-      - "50051:50051"
+      - "50053:50053"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

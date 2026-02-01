@@ -246,3 +246,216 @@ class TestConcurrentRequests:
         assert len(errors) == 0, f"Errors occurred: {errors}"
         assert len(results) == 5
         assert all(success for _, success in results)
+
+
+class TestQueryArticlesIntegration:
+    """Integration tests for QueryArticles RPC."""
+
+    def test_query_articles_returns_answer(
+        self, grpc_stub, mock_embedding_service, mock_backend_client
+    ):
+        """Test RAG-based question answering through full gRPC flow."""
+        from catchup_ai.infra.grpc.embedding_client import SimilarArticleResult
+
+        # Setup mock to return similar articles
+        mock_backend_client.search_similar.return_value = [
+            SimilarArticleResult(article_id=1, similarity=0.9),
+            SimilarArticleResult(article_id=2, similarity=0.8),
+        ]
+
+        # Mock the RAG pipeline
+        with patch(
+            "catchup_ai.api.grpc.article_servicer.RAGPipeline"
+        ) as mock_pipeline_class:
+            from catchup_ai.core.rag.pipeline import RAGResponse
+            from catchup_ai.core.rag.retriever import RetrievedArticle
+
+            mock_pipeline = MagicMock()
+            mock_pipeline.query.return_value = RAGResponse(
+                answer="AI is artificial intelligence.",
+                source_articles=[
+                    RetrievedArticle(
+                        article_id=1,
+                        title="AI Article",
+                        url="https://example.com/ai",
+                        content="Content about AI",
+                        similarity_score=0.9,
+                    )
+                ],
+                confidence=0.85,
+                model="claude-sonnet-4-20250514",
+                provider="claude",
+                tokens_used=100,
+            )
+            mock_pipeline_class.return_value = mock_pipeline
+
+            request = article_pb2.QueryArticlesRequest(
+                question="What is AI?",
+                max_context_articles=5,
+            )
+
+            response = grpc_stub.QueryArticles(request)
+
+            assert len(response.answer) > 0
+            assert response.confidence > 0
+            assert len(response.source_articles) >= 0
+
+    def test_query_articles_empty_question(self, grpc_stub, mock_embedding_service):
+        """Test query with empty question returns error."""
+        request = article_pb2.QueryArticlesRequest(
+            question="",
+        )
+
+        with pytest.raises(grpc.RpcError) as exc_info:
+            grpc_stub.QueryArticles(request)
+
+        assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+
+    def test_query_articles_no_results(
+        self, grpc_stub, mock_embedding_service, mock_backend_client
+    ):
+        """Test query when no similar articles found."""
+        mock_backend_client.search_similar.return_value = []
+
+        with patch(
+            "catchup_ai.api.grpc.article_servicer.RAGPipeline"
+        ) as mock_pipeline_class:
+            from catchup_ai.core.rag.pipeline import RAGResponse
+
+            mock_pipeline = MagicMock()
+            mock_pipeline.query.return_value = RAGResponse(
+                answer="I couldn't find any relevant articles.",
+                source_articles=[],
+                confidence=0.0,
+                model="claude-sonnet-4-20250514",
+                provider="claude",
+                tokens_used=0,
+            )
+            mock_pipeline_class.return_value = mock_pipeline
+
+            request = article_pb2.QueryArticlesRequest(
+                question="Very obscure topic with no matches",
+            )
+
+            response = grpc_stub.QueryArticles(request)
+
+            assert "couldn't find" in response.answer.lower()
+            assert response.confidence == 0.0
+
+
+class TestGenerateWeeklySummaryIntegration:
+    """Integration tests for GenerateWeeklySummary RPC."""
+
+    def test_generate_summary_success(
+        self, grpc_stub, mock_embedding_service, mock_backend_client
+    ):
+        """Test weekly summary generation through full gRPC flow."""
+        from catchup_ai.infra.grpc.embedding_client import SimilarArticleResult
+
+        mock_backend_client.search_similar.return_value = [
+            SimilarArticleResult(article_id=1, similarity=0.8),
+            SimilarArticleResult(article_id=2, similarity=0.7),
+        ]
+
+        with patch(
+            "catchup_ai.api.grpc.article_servicer.RAGPipeline"
+        ) as mock_pipeline_class:
+            from catchup_ai.core.rag.pipeline import SummaryResponse
+            from catchup_ai.core.rag.retriever import RetrievedArticle
+
+            mock_retriever = MagicMock()
+            mock_retriever.retrieve.return_value = [
+                RetrievedArticle(
+                    article_id=1,
+                    title="Article 1",
+                    url="https://example.com/1",
+                    content="Content 1",
+                    similarity_score=0.8,
+                ),
+            ]
+
+            mock_pipeline = MagicMock()
+            mock_pipeline._retriever = mock_retriever
+            mock_pipeline.summarize.return_value = SummaryResponse(
+                summary="This week's highlights include AI advancements.",
+                highlights=["AI breakthrough", "New ML model"],
+                articles=[{"title": "Article 1"}],
+                period="week",
+                model="claude-sonnet-4-20250514",
+                provider="claude",
+                tokens_used=200,
+            )
+            mock_pipeline_class.return_value = mock_pipeline
+
+            request = article_pb2.GenerateWeeklySummaryRequest(
+                period="week",
+            )
+
+            response = grpc_stub.GenerateWeeklySummary(request)
+
+            assert len(response.summary) > 0
+            assert len(response.highlights) >= 0
+
+    def test_generate_summary_month_period(
+        self, grpc_stub, mock_embedding_service, mock_backend_client
+    ):
+        """Test monthly summary generation."""
+        with patch(
+            "catchup_ai.api.grpc.article_servicer.RAGPipeline"
+        ) as mock_pipeline_class:
+            from catchup_ai.core.rag.pipeline import SummaryResponse
+            from catchup_ai.core.rag.retriever import RetrievedArticle
+
+            mock_retriever = MagicMock()
+            mock_retriever.retrieve.return_value = [
+                RetrievedArticle(
+                    article_id=1,
+                    title="Article",
+                    url="https://example.com",
+                    content="Content",
+                    similarity_score=0.7,
+                ),
+            ]
+
+            mock_pipeline = MagicMock()
+            mock_pipeline._retriever = mock_retriever
+            mock_pipeline.summarize.return_value = SummaryResponse(
+                summary="Monthly summary of tech news.",
+                highlights=["Highlight 1"],
+                articles=[],
+                period="month",
+                model="claude-sonnet-4-20250514",
+                provider="claude",
+                tokens_used=250,
+            )
+            mock_pipeline_class.return_value = mock_pipeline
+
+            request = article_pb2.GenerateWeeklySummaryRequest(
+                period="month",
+            )
+
+            response = grpc_stub.GenerateWeeklySummary(request)
+
+            assert len(response.summary) > 0
+
+    def test_generate_summary_no_articles(
+        self, grpc_stub, mock_embedding_service, mock_backend_client
+    ):
+        """Test summary when no articles available."""
+        with patch(
+            "catchup_ai.api.grpc.article_servicer.RAGPipeline"
+        ) as mock_pipeline_class:
+            mock_retriever = MagicMock()
+            mock_retriever.retrieve.return_value = []
+
+            mock_pipeline = MagicMock()
+            mock_pipeline._retriever = mock_retriever
+            mock_pipeline_class.return_value = mock_pipeline
+
+            request = article_pb2.GenerateWeeklySummaryRequest(
+                period="week",
+            )
+
+            response = grpc_stub.GenerateWeeklySummary(request)
+
+            assert "No articles" in response.summary

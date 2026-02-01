@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+
+# ============================================================================
+# Development image with dev dependencies (ruff, pytest, mypy, etc.)
+# ============================================================================
+FROM python:3.13-slim
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+
+# Copy dependency files
+COPY pyproject.toml uv.lock* ./
+COPY README.md ./
+
+# Install ALL dependencies (including dev and voyage)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --extra dev --extra voyage
+
+# Copy source code
+COPY src/ src/
+COPY proto/ proto/
+COPY scripts/ scripts/
+COPY tests/ tests/
+
+# Install the project itself
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --extra dev --extra voyage
+
+# Set environment variables
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Expose gRPC port
+EXPOSE 50053
+
+# Default command for development
+CMD ["python", "-m", "catchup_ai"]

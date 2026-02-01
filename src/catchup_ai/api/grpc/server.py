@@ -11,6 +11,7 @@ from concurrent import futures
 import grpc
 import structlog
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
+from grpc_reflection.v1alpha import reflection
 
 from catchup_ai.api.grpc.article_servicer import ArticleAIServicer
 from catchup_ai.api.grpc.generated import article_pb2_grpc
@@ -53,6 +54,16 @@ def create_server() -> grpc.Server:
         "",  # Overall server health
         health_pb2.HealthCheckResponse.SERVING,
     )
+
+    # Enable reflection for debugging (grpcurl, grpc_cli)
+    from catchup_ai.api.grpc.generated import article_pb2
+
+    service_names = (
+        article_pb2.DESCRIPTOR.services_by_name["ArticleAI"].full_name,
+        health_pb2.DESCRIPTOR.services_by_name["Health"].full_name,
+        reflection.SERVICE_NAME,
+    )
+    reflection.enable_server_reflection(service_names, server)
 
     # Add port
     server.add_insecure_port(settings.grpc.address)

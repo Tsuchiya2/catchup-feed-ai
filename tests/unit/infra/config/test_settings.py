@@ -98,15 +98,23 @@ class TestGrpcSettings:
 
     def test_default_values(self):
         """Test default gRPC settings."""
-        settings = GrpcSettings()
-        assert settings.host == "0.0.0.0"
-        assert settings.port == 50051
-        assert settings.max_workers == 10
+        # Clear env vars to test actual defaults
+        with patch.dict(os.environ, {"GRPC_PORT": "", "GRPC_HOST": ""}, clear=False):
+            os.environ.pop("GRPC_PORT", None)
+            os.environ.pop("GRPC_HOST", None)
+            settings = GrpcSettings()
+            assert settings.host == "0.0.0.0"
+            assert settings.port == 50051
+            assert settings.max_workers == 10
 
     def test_address_property(self):
         """Test address property combines host and port."""
-        settings = GrpcSettings()
-        assert settings.address == "0.0.0.0:50051"
+        # Clear env vars to test actual defaults
+        with patch.dict(os.environ, {"GRPC_PORT": "", "GRPC_HOST": ""}, clear=False):
+            os.environ.pop("GRPC_PORT", None)
+            os.environ.pop("GRPC_HOST", None)
+            settings = GrpcSettings()
+            assert settings.address == "0.0.0.0:50051"
 
     def test_custom_port(self):
         """Test custom port setting."""
@@ -124,7 +132,7 @@ class TestBackendSettings:
         settings = BackendSettings()
         assert settings.grpc_host == "localhost"
         assert settings.grpc_port == 50052
-        assert settings.grpc_timeout == 30.0
+        assert settings.grpc_tls is False
 
     def test_grpc_address_property(self):
         """Test grpc_address property combines host and port."""
@@ -138,13 +146,13 @@ class TestBackendSettings:
             {
                 "BACKEND_GRPC_HOST": "backend.local",
                 "BACKEND_GRPC_PORT": "9090",
-                "BACKEND_GRPC_TIMEOUT": "60.0",
+                "BACKEND_GRPC_TLS": "true",
             },
         ):
             settings = BackendSettings()
             assert settings.grpc_host == "backend.local"
             assert settings.grpc_port == 9090
-            assert settings.grpc_timeout == 60.0
+            assert settings.grpc_tls is True
             assert settings.grpc_address == "backend.local:9090"
 
 
