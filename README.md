@@ -82,6 +82,44 @@ uv run pulse-books search "goroutine とチャネルの違い" --top-k 5
 環境変数は transcribe worker と共通の `.env`(`DATABASE_URL` 共用、
 `OLLAMA_HOST` / `EMBEDDING_MODEL` は既定値あり。詳細は `.env.example`)。
 
+## Open WebUI への Tool 登録手順(書籍壁打ち、A-23)
+
+壁打ち中の LLM(gemma4:12b)が `book_chunks` を検索できるようにする Open WebUI Tool が
+`openwebui/book_search_tool.py`。単一ファイル自己完結(Open WebUI のサンドボックスに
+貼り付けるため `pulse_books` を import できない)で、SQL・1024次元ガードは
+`pulse_books.db.SEARCH_SQL` / `pulse_books.embedding` と同じ意味論を複製している
+(一致は `tests/test_openwebui_tool.py` のパリティテストが担保)。
+
+前提: Open WebUI が Mac の Docker で稼働し(コンテナから見て Ollama は
+`host.docker.internal:11434`)、Mac の Tailscale 経由で Pi の Postgres に到達できること。
+Docker Desktop はコンテナの外向き通信をホストのネットワークスタック経由で出すため、
+macOS の userspace Tailscale でも**追加設定なしで** Pi の tailnet アドレス
+(`<Pi名>.<tailnet>.ts.net:5433` — `~/pulse/.env` の `DATABASE_URL` と同じ接続先)に
+届く(実機確認済み。ポートフォワードや `--add-host` は不要)。
+
+1. **Tool 登録**: 管理者でログイン → Workspace → Tools → `+`(New Tool)→
+   `openwebui/book_search_tool.py` の内容を丸ごと貼り付けて Save。
+   フロントマターの `requirements: psycopg[binary]>=3.2` により保存時に依存が
+   自動インストールされる(公式イメージには psycopg 同梱済みなので実質即時)
+2. **Valves 設定**: Tools 一覧の該当 Tool の歯車アイコン(Valves)を開き、
+   - `DATABASE_URL`: Mac の `~/pulse/.env` の `DATABASE_URL` と同じ値(**必須**)
+   - `OLLAMA_HOST`: 既定 `http://host.docker.internal:11434` のままでよい
+   - `EMBEDDING_MODEL`: 既定 `bge-m3`(D-12。変更は全書籍の再取り込みを伴う)
+   - `TOP_K`: 既定 5
+3. **モデルへの有効化**: チャット画面の入力欄の `+` → Tools で有効化するか、
+   Admin Panel → Settings → Models → gemma4:12b の編集画面で Tools に
+   このツールをチェックして常時有効にする
+4. **動作確認**: gemma4:12b とのチャットで「リーダブルコードでは変数の命名について
+   何と言っている?」のような質問を投げ、Tool 呼び出し(`search_books`)が走って
+   書名つきの回答が返ることを確認する。REST API(`POST /api/chat/completions`)で
+   確認する場合は `"params": {"function_calling": "legacy"}` を付ける
+   (Open WebUI 0.10.x の既定は native で、セッションのない API 呼び出しでは
+   tool_calls がクライアントに返されるだけになる。UI チャットはどちらでも動く)
+
+C-12: この Tool の通信先は Ollama(Mac ローカル)と Pi の Postgres(Tailscale)のみ。
+書籍データ・クエリはクラウドに出ない。embedding モデルは書籍取り込み側と同一の
+bge-m3 でなければ検索が成立しない点に注意。
+
 ## 開発
 
 パッケージ管理は [uv](https://docs.astral.sh/uv/)。
