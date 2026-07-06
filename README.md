@@ -31,11 +31,21 @@ jobs poll(SKIP LOCKED claim、意味論は backend internal/jobs が正)
 
 ### 実行
 
+**運用・手動検証の正は deploy 資材のラッパー**(catchup-feed-backend の `deploy/ai.md` 5章):
+`~/pulse/bin/transcribe-run.sh --deadline <近い時刻>` — `~/pulse/.env` を読み込むので
+このリポジトリ側に `.env` を置く必要はない。
+
+`make run` は**開発用ショートカット**で、設定はカレントディレクトリの `.env`
+(なければ環境変数)から読む。使う場合は先に用意する:
+
 ```sh
 cp .env.example .env   # DATABASE_URL 等を記入(キー一覧とコメントは .env.example 参照)
-make run               # = uv run pulse-transcribe(--deadline 04:15)
+make run               # = uv run pulse-transcribe(--deadline 04:15。昼間の実行は翌朝解決に注意)
 make run ARGS="--deadline 06:00"
 ```
+
+注意: 旧 catchup-feed 時代の `.env`(gRPC/OpenAI 系の変数入り)が残っていると
+それが読まれて `database_url Field required` で落ちる。心当たりがあれば退避・削除する。
 
 環境変数(詳細は `.env.example`):
 
