@@ -148,6 +148,35 @@ class TestTextChunker:
         chunks = chunker.chunk(text)
         assert len(chunks) > 0
 
+    def test_paragraph_strategy_splits_long_japanese_paragraph_at_sentences(self):
+        """B-1 regression: the production ingest path (PARAGRAPH default, as
+
+        cli.ingest uses it) must split an over-long Japanese paragraph on
+        「。」 boundaries, not mid-sentence at a fixed offset — Japanese
+        text has no ASCII spaces for the fixed-size word-boundary search.
+        """
+        chunker = TextChunker()  # PARAGRAPH, chunk_size=1000 — cli.ingest's setup
+        sentence = "私たちは細切れの時間で技術書を読み進めることの難しさを知っています。"
+        text = sentence * 40  # one paragraph, no \n\n, well over 1000 chars
+        chunks = chunker.chunk(text)
+
+        assert len(chunks) > 1
+        for chunk in chunks:
+            # Every cut lands on a sentence boundary.
+            assert chunk.text.endswith("。")
+            assert len(chunk.text) <= chunker.chunk_size
+        # Nothing lost or duplicated (Japanese chunks re-join without spaces).
+        assert "".join(chunk.text for chunk in chunks) == text
+
+    def test_paragraph_strategy_single_overlong_sentence_falls_back_to_fixed_size(self):
+        """A sentence with no terminator at all still gets split (last resort)."""
+        chunker = TextChunker()
+        text = "あ" * 1500  # one paragraph, one "sentence", no 。
+        chunks = chunker.chunk(text)
+
+        assert len(chunks) >= 2
+        assert all(len(chunk.text) <= chunker.chunk_size for chunk in chunks)
+
     def test_chunk_semantic(self):
         """Test semantic chunking with headers."""
         chunker = TextChunker(

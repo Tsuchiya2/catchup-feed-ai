@@ -178,7 +178,16 @@ class TextChunker:
                     chunk_index += 1
                     current_start += len(current_chunk) + 1
 
-                current_chunk = sentence
+                # A single sentence longer than chunk_size has no sentence
+                # boundary to cut at: last-resort fixed-size split.
+                if len(sentence) > self.chunk_size:
+                    for sub in self._chunk_fixed_size(sentence):
+                        sub.chunk_index = chunk_index
+                        chunks.append(sub)
+                        chunk_index += 1
+                    current_chunk = ""
+                else:
+                    current_chunk = sentence
 
         # Add remaining chunk
         if current_chunk:
@@ -234,9 +243,15 @@ class TextChunker:
                     chunk_index += 1
                     current_start += len(current_chunk) + 2
 
-                # If single paragraph exceeds chunk_size, split it
+                # A single paragraph exceeding chunk_size is split on
+                # sentence boundaries (Japanese-aware): book paragraphs
+                # routinely exceed 1000 characters, and a fixed-size split
+                # would cut mid-sentence — its ASCII-space word-boundary
+                # search never hits in Japanese text. A single over-long
+                # sentence still ends up fixed-size inside
+                # _chunk_by_sentence (last resort).
                 if len(para) > self.chunk_size:
-                    sub_chunks = self._chunk_fixed_size(para)
+                    sub_chunks = self._chunk_by_sentence(para)
                     for sub in sub_chunks:
                         sub.chunk_index = chunk_index
                         chunks.append(sub)
