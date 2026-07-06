@@ -1,7 +1,9 @@
 """書籍 PDF RAG 取り込み(pulse Phase 2、設計書 §6).
 
-旧 catchup_ai.core.rag.chunker を移植した唯一の流用資産を含む。
-PDF 抽出・embedding(Ollama)・pgvector 書き込みは書籍 RAG 実装タスクで追加する。
+pulse-books CLI(cli.py)がエントリポイント:
+PDF 抽出(pdf.py)→ チャンク化(chunker.py、旧実装からの唯一の流用資産)
+→ embedding(embedding.py、Ollama bge-m3・ローカル限定 C-12)
+→ Pi の pgvector books / book_chunks(db.py。テーブル作成は backend の責務)。
 """
 
 from .chunker import ChunkStrategy, TextChunk, TextChunker
