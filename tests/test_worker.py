@@ -13,9 +13,9 @@ from pulse_transcribe.db import Job
 from pulse_transcribe.errors import BudgetExceededError, PermanentJobError
 from pulse_transcribe.models import TranscribePayload, Transcript
 from pulse_transcribe.worker import (
-    DEFER_DELAY,
     JOB_KIND_TRANSCRIBE,
     TranscribeWorker,
+    aware_now,
     next_deadline,
     parse_deadline,
 )
@@ -49,6 +49,7 @@ class FakeStore:
         self.claims: list[Job] = []
         self.done: list[int] = []
         self.failed: list[tuple[int, str, datetime | None]] = []
+        self.deferred: list[int] = []
         self.contents: dict[int, str] = {}
         self.requeue_calls: list[tuple[str, ...]] = []
         self.op_order: list[str] = []
@@ -72,6 +73,10 @@ class FakeStore:
     def mark_failed(self, job_id: int, last_error: str, retry_at: datetime | None) -> None:
         self.op_order.append(f"failed:{job_id}")
         self.failed.append((job_id, last_error, retry_at))
+
+    def defer(self, job_id: int) -> None:
+        self.op_order.append(f"defer:{job_id}")
+        self.deferred.append(job_id)
 
     def update_article_content(self, article_id: int, content: str) -> bool:
         self.op_order.append(f"update:{article_id}")
@@ -210,35 +215,96 @@ def test_handler_sees_remaining_budget() -> None:
     assert seen == [7200.0, 5200.0]
 
 
-def test_budget_deferral_reschedules_for_next_night() -> None:
+def test_budget_deferral_returns_job_to_queue_and_ends_the_night() -> None:
+    """D-14: a job that does not fit tonight's remainder (but fits the full
+
+    budget) is deferred — not failed: attempts are rolled back via
+    store.defer and the worker stops claiming for the night.
+    """
     clock = FakeClock()
-    store = FakeStore([make_job(job_id=1, attempts=1), make_job(job_id=2, article_id=12)])
+    store = FakeStore(
+        [
+            make_job(job_id=1, article_id=11),
+            make_job(job_id=2, article_id=12),
+            make_job(job_id=3, article_id=13),
+        ]
+    )
 
     def handler(payload: TranscribePayload, remaining: float) -> Transcript:
-        if payload.article_id == 10:
-            raise BudgetExceededError(9000.0, remaining)
-        return Transcript("text", 100.0)
+        if payload.article_id == 11:
+            return Transcript("text", 2000.0)
+        # 6000s fits the full 7200s budget but not tonight's 5200s remainder.
+        raise BudgetExceededError(6000.0, remaining)
 
-    consumed = make_worker(store, handler, clock).run(deadline_in(clock, 3600))
+    consumed = make_worker(store, handler, clock, budget_seconds=7200.0).run(
+        deadline_in(clock, 86000)
+    )
 
-    job_id, last_error, retry_at = store.failed[0]
-    assert job_id == 1
-    assert "D-14" in last_error
-    assert retry_at == START + DEFER_DELAY  # next-night carry-over, not linear minutes
-    # A deferral consumes no budget and does not stop the loop.
-    assert store.done == [2]
-    assert consumed == 100.0
+    assert store.deferred == [2]  # returned to the queue, attempts rolled back
+    assert store.failed == []  # a deferral is not a failure
+    assert [j.id for j in store.claims] == [1, 2]  # night ends: job 3 not claimed
+    assert len(store.pending) == 1
+    assert store.done == [1]
+    assert consumed == 2000.0  # the deferred job consumed no budget
 
 
-def test_budget_deferral_at_attempts_ceiling_fails_terminally() -> None:
+def test_budget_deferral_ignores_the_attempts_ceiling() -> None:
+    """A deferral consumes no attempt, so the ceiling is irrelevant to it."""
     clock = FakeClock()
     store = FakeStore([make_job(job_id=1, attempts=3)])
 
     def handler(payload: TranscribePayload, remaining: float) -> Transcript:
-        raise BudgetExceededError(9000.0, remaining)
+        raise BudgetExceededError(6000.0, remaining)
 
-    make_worker(store, handler, clock).run(deadline_in(clock, 60))
-    assert store.failed[0][2] is None  # terminal, §5.3 長尺の足切り
+    make_worker(store, handler, clock, budget_seconds=7200.0).run(deadline_in(clock, 60))
+
+    assert store.deferred == [1]
+    assert store.failed == []
+
+
+def test_audio_exceeding_the_full_budget_fails_terminally() -> None:
+    """D-14 / §5.3 足切り: audio longer than the whole nightly budget can
+
+    never fit, so it is failed permanently instead of deferred — and the
+    night continues for the jobs behind it.
+    """
+    clock = FakeClock()
+    store = FakeStore([make_job(job_id=1, article_id=11), make_job(job_id=2, article_id=12)])
+
+    def handler(payload: TranscribePayload, remaining: float) -> Transcript:
+        if payload.article_id == 11:
+            raise BudgetExceededError(9000.0, remaining)  # 9000s > full 7200s
+        return Transcript("text", 100.0)
+
+    consumed = make_worker(store, handler, clock, budget_seconds=7200.0).run(
+        deadline_in(clock, 3600)
+    )
+
+    job_id, last_error, retry_at = store.failed[0]
+    assert job_id == 1
+    assert retry_at is None  # terminal
+    assert "never fit" in last_error and "D-14" in last_error
+    assert store.deferred == []
+    assert store.done == [2]  # not a deferral: the loop kept claiming
+    assert consumed == 100.0
+
+
+def test_defer_error_still_ends_the_night() -> None:
+    class BrokenDeferStore(FakeStore):
+        def defer(self, job_id: int) -> None:
+            raise RuntimeError("connection lost")
+
+    clock = FakeClock()
+    store = BrokenDeferStore([make_job(job_id=1), make_job(job_id=2, article_id=12)])
+
+    def handler(payload: TranscribePayload, remaining: float) -> Transcript:
+        raise BudgetExceededError(6000.0, remaining)
+
+    make_worker(store, handler, clock, budget_seconds=7200.0).run(deadline_in(clock, 3600))
+
+    # The row stays running (swept at next start); no second claim tonight.
+    assert [j.id for j in store.claims] == [1]
+    assert store.failed == []
 
 
 @pytest.mark.parametrize(("attempts", "delay_minutes"), [(1, 1), (2, 2)])
@@ -408,3 +474,29 @@ def test_next_deadline_rolls_over_when_already_past() -> None:
 def test_next_deadline_exactly_at_deadline_rolls_over() -> None:
     now = datetime(2026, 7, 6, 4, 15, 0)
     assert next_deadline(parse_deadline("04:15"), now) == datetime(2026, 7, 7, 4, 15, 0)
+
+
+# --- timezone-awareness (B-1) ------------------------------------------------
+
+
+def test_production_clock_is_timezone_aware() -> None:
+    """jobs.run_after is timestamptz; a naive datetime would be reinterpreted
+
+    in the server session time zone (UTC on the Pi), shifting retries by
+    the local UTC offset.
+    """
+    stamp = aware_now()
+    assert stamp.tzinfo is not None
+    assert stamp.utcoffset() is not None
+
+
+def test_worker_default_clock_is_the_aware_one() -> None:
+    worker = TranscribeWorker(store=FakeStore(), handler=lambda p, r: Transcript("x", 0.0))
+    assert worker.now().tzinfo is not None
+
+
+def test_next_deadline_preserves_timezone() -> None:
+    now = aware_now().replace(hour=3, minute=0, second=0, microsecond=0)
+    deadline = next_deadline(parse_deadline("04:15"), now)
+    assert deadline.tzinfo == now.tzinfo
+    assert deadline - now == timedelta(hours=1, minutes=15)

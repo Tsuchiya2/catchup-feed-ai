@@ -6,13 +6,20 @@ backend implementation is the contract owner. On top of that the loop adds
 only what §5 / D-14 require of the nightly batch:
 
 - D-14: stop claiming once the transcribed audio total reaches the nightly
-  budget (2h); audio that provably would not fit is deferred to the next
-  night (a retryable failure with a next-night run_after, still subject to
-  the attempts ceiling — §5.3 長尺の足切り).
+  budget (2h). Audio that can never fit the *full* budget is cut off
+  terminally (§5.3 長尺の足切り). Audio that merely does not fit tonight's
+  remainder is deferred: the unstarted job goes back to pending with the
+  claim's attempts increment rolled back (a deferral is not a failure), and
+  the worker stops claiming for the night — the job is first in line the
+  next night.
 - --deadline (default 04:15): stop claiming past the deadline so radio's
   04:30 slot is never invaded; an in-flight job is allowed to finish.
 - Degradation (§5.3): a job failure is contained by MarkFailed; the loop
   itself never dies because of one job.
+
+All timestamps handed to the DB are timezone-aware: jobs.run_after is
+timestamptz and the Pi's Postgres session runs in UTC, so a naive local
+datetime would land hours off the intended instant.
 """
 
 import argparse
@@ -41,14 +48,19 @@ MAX_ATTEMPTS = 3
 # Backend default retry backoff: linear minutes (consumer.go retryDelay).
 _RETRY_DELAY_PER_ATTEMPT = timedelta(minutes=1)
 
-# D-14 carry-over: a budget-deferred job must not become claimable again
-# tonight (the linear-minutes backoff would burn all attempts within one
-# run). 20 hours from the 03:00–04:15 window always lands before the next
-# night's window.
-DEFER_DELAY = timedelta(hours=20)
-
 # Stop claiming at this local time so radio (04:30) is never invaded.
 DEFAULT_DEADLINE = "04:15"
+
+
+def aware_now() -> datetime:
+    """Timezone-aware local time — the worker's production clock.
+
+    jobs.run_after / retry timestamps are timestamptz; binding a naive
+    datetime would let the server session time zone (UTC on the Pi's
+    Postgres) reinterpret it, turning a 1-minute retry into a ~9-hour one
+    from JST.
+    """
+    return datetime.now().astimezone()
 
 
 class JobStoreLike(Protocol):
@@ -57,6 +69,7 @@ class JobStoreLike(Protocol):
     def claim_next(self, *kinds: str) -> Job | None: ...
     def mark_done(self, job_id: int) -> None: ...
     def mark_failed(self, job_id: int, last_error: str, retry_at: datetime | None) -> None: ...
+    def defer(self, job_id: int) -> None: ...
     def requeue_running(self, *kinds: str) -> int: ...
     def update_article_content(self, article_id: int, content: str) -> bool: ...
 
@@ -72,8 +85,7 @@ class TranscribeWorker:
     budget_seconds: float = 7200.0  # D-14
     poll_interval_seconds: float = 10.0
     max_attempts: int = MAX_ATTEMPTS
-    defer_delay: timedelta = DEFER_DELAY
-    now: Callable[[], datetime] = field(default=datetime.now)
+    now: Callable[[], datetime] = field(default=aware_now)
     sleep: Callable[[float], None] = field(default=time_module.sleep)
 
     def run(self, deadline: datetime) -> float:
@@ -122,7 +134,17 @@ class TranscribeWorker:
                 job = None
 
             if job is not None:
-                consumed += self._process(job, self.budget_seconds - consumed)
+                consumed_delta, deferred = self._process(job, self.budget_seconds - consumed)
+                consumed += consumed_delta
+                if deferred:
+                    # D-14: the first deferral ends the night. The deferred
+                    # job kept its queue position and consumed no attempt;
+                    # with tomorrow's full budget it is handled first.
+                    log.info(
+                        "jobs: job deferred to the next night (D-14), stopping",
+                        audio_seconds=round(consumed, 1),
+                    )
+                    break
                 continue  # drain the backlog without sleeping
 
             remaining = (deadline - self.now()).total_seconds()
@@ -131,9 +153,10 @@ class TranscribeWorker:
 
         return consumed
 
-    def _process(self, job: Job, remaining_budget_seconds: float) -> float:
-        """Execute one claimed job; returns the audio seconds it consumed.
+    def _process(self, job: Job, remaining_budget_seconds: float) -> tuple[float, bool]:
+        """Execute one claimed job.
 
+        Returns (audio seconds consumed, whether the job was D-14-deferred).
         Mirrors the backend consumer's process(): success marks done, any
         failure goes through the retry policy. Audio seconds are counted
         whenever Whisper actually ran, even if a later step failed — the
@@ -146,31 +169,32 @@ class TranscribeWorker:
             payload = TranscribePayload.parse(job.payload)
         except PermanentJobError as exc:
             self._record_failure(job, exc, log)
-            return 0.0
+            return 0.0, False
 
         try:
             transcript = self.handler(payload, remaining_budget_seconds)
+        except BudgetExceededError as exc:
+            return 0.0, self._handle_budget_exceeded(job, exc, log)
         except Exception as exc:
-            # BudgetExceededError defers to the next night; anything else
-            # follows the linear-minutes retry policy. Either way the loop
-            # survives (§5.3).
+            # Retryable by the linear-minutes policy; the loop survives
+            # either way (§5.3).
             self._record_failure(job, exc, log)
-            return 0.0
+            return 0.0, False
 
         if not transcript.text.strip():
             self._record_failure(job, TranscriptionError("transcription produced no text"), log)
-            return transcript.audio_seconds
+            return transcript.audio_seconds, False
 
         try:
             updated = self.store.update_article_content(payload.article_id, transcript.text)
         except Exception as exc:
             self._record_failure(job, exc, log)
-            return transcript.audio_seconds
+            return transcript.audio_seconds, False
         if not updated:
             self._record_failure(
                 job, PermanentJobError(f"article {payload.article_id} not found"), log
             )
-            return transcript.audio_seconds
+            return transcript.audio_seconds, False
 
         try:
             self.store.mark_done(job.id)
@@ -179,26 +203,54 @@ class TranscribeWorker:
             # and is swept back to pending at the next start; re-running
             # the job just overwrites articles.content (idempotent).
             log.error("jobs: mark done failed", error=str(exc))
-            return transcript.audio_seconds
+            return transcript.audio_seconds, False
 
         log.info("jobs: job done", audio_seconds=round(transcript.audio_seconds, 1))
-        return transcript.audio_seconds
+        return transcript.audio_seconds, False
+
+    def _handle_budget_exceeded(
+        self, job: Job, exc: BudgetExceededError, log: structlog.typing.FilteringBoundLogger
+    ) -> bool:
+        """Apply D-14: terminal cut-off vs no-attempt deferral.
+
+        Returns True when the night must end (a deferral happened). The
+        handler raises BudgetExceededError strictly before any work is
+        committed, so the job is untouched and may legally be returned to
+        the queue with its attempts increment rolled back.
+        """
+        if exc.duration_seconds > self.budget_seconds:
+            # §5.3 足切り: it can never fit, no matter how many nights pass.
+            self._record_failure(
+                job,
+                PermanentJobError(
+                    f"audio {exc.duration_seconds:.0f}s can never fit the full nightly "
+                    f"budget {self.budget_seconds:.0f}s (D-14)"
+                ),
+                log,
+            )
+            return False  # a failure, not a deferral: keep claiming
+
+        try:
+            self.store.defer(job.id)
+        except Exception as defer_exc:
+            # The row stays running and is swept back to pending at the
+            # next start (at the cost of the sweep's attempts increment).
+            log.error("jobs: defer failed", error=str(defer_exc), job_error=str(exc))
+            return True
+        log.info("jobs: job deferred, attempts rolled back (D-14)", reason=str(exc))
+        return True
 
     def _record_failure(
         self, job: Job, exc: Exception, log: structlog.typing.FilteringBoundLogger
     ) -> None:
         """Backend consumer's recordFailure: permanent errors and exhausted
 
-        attempts fail terminally, everything else is rescheduled — with the
-        linear-minutes backoff, or the next-night delay for D-14 deferrals.
+        attempts fail terminally, everything else is rescheduled with the
+        linear-minutes backoff.
         """
         retry_at: datetime | None = None
         if not isinstance(exc, PermanentJobError) and job.attempts < self.max_attempts:
-            if isinstance(exc, BudgetExceededError):
-                delay = self.defer_delay
-            else:
-                delay = job.attempts * _RETRY_DELAY_PER_ATTEMPT
-            retry_at = self.now() + delay
+            retry_at = self.now() + job.attempts * _RETRY_DELAY_PER_ATTEMPT
 
         try:
             self.store.mark_failed(job.id, str(exc), retry_at)
@@ -228,7 +280,8 @@ def next_deadline(deadline: time, now: datetime) -> datetime:
     """The next occurrence of the given time of day strictly after now.
 
     Started at 03:00 with the default 04:15, that is the same morning; a
-    run started after the deadline time rolls over to the next day.
+    run started after the deadline time rolls over to the next day. The
+    result carries now's tzinfo (aware in production, see aware_now).
     """
     candidate = now.replace(
         hour=deadline.hour, minute=deadline.minute, second=0, microsecond=0
@@ -298,7 +351,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     settings = Settings()  # type: ignore[call-arg]
     configure_logging(settings.log_level)
 
-    deadline = next_deadline(args.deadline, datetime.now())
+    deadline = next_deadline(args.deadline, aware_now())
 
     # autocommit: each statement commits on its own (like Go's database/sql),
     # which is what the SKIP LOCKED claim semantics assume.

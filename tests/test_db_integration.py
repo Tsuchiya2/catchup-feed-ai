@@ -210,6 +210,59 @@ def test_mark_failed_missing_row_raises(store: JobStore) -> None:
         store.mark_failed(999999, "x", None)
 
 
+def test_retry_at_from_the_production_clock_lands_on_the_intended_instant(
+    conn: psycopg.Connection, store: JobStore
+) -> None:
+    """B-1 regression: the worker's clock (aware_now) must survive the trip
+
+    through a UTC session — the production Pi Postgres runs with TZ unset
+    (Etc/UTC), where a *naive* local datetime would be reinterpreted as UTC
+    and a 1-minute retry would land hours away.
+    """
+    conn.execute("SET TIME ZONE 'Etc/UTC'")  # match the production session
+    enqueue(conn, run_after_offset_seconds=-5)
+    job = store.claim_next("transcribe")
+    assert job is not None
+
+    from pulse_transcribe.worker import aware_now
+
+    retry_at = aware_now() + timedelta(minutes=1)  # the worker's production path
+    store.mark_failed(job.id, "transient", retry_at)
+
+    _, _, _, run_after = fetch_job(conn, job.id)
+    assert run_after == retry_at  # same instant, regardless of session TZ
+    # And that instant really is ~1 minute out, not offset by the local TZ.
+    delta = (run_after - datetime.now(UTC)).total_seconds()
+    assert 0 < delta < 120
+
+
+def test_defer_returns_job_to_pending_with_attempts_rolled_back(
+    conn: psycopg.Connection, store: JobStore
+) -> None:
+    """D-14 carry-over: a deferral undoes the claim's attempts increment,
+
+    so waiting for budget never eats into the retry ceiling.
+    """
+    job_id = enqueue(conn, run_after_offset_seconds=-5)
+    job = store.claim_next("transcribe")
+    assert job is not None and job.attempts == 1
+
+    store.defer(job.id)
+
+    status, attempts, last_error, _ = fetch_job(conn, job_id)
+    assert (status, attempts) == ("pending", 0)
+    assert last_error is None  # a deferral is not a failure
+
+    reclaimed = store.claim_next("transcribe")  # immediately claimable again
+    assert reclaimed is not None and reclaimed.id == job_id
+    assert reclaimed.attempts == 1  # tonight's deferral consumed no attempt
+
+
+def test_defer_missing_row_raises(store: JobStore) -> None:
+    with pytest.raises(JobStoreError):
+        store.defer(999999)
+
+
 def test_requeue_running_is_scoped_to_given_kinds(
     conn: psycopg.Connection, store: JobStore
 ) -> None:

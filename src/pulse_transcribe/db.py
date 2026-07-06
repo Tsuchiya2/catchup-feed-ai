@@ -8,7 +8,10 @@ contract owner; do not extend the state machine here.
 The only adaptation: the kind list is bound as `kind = ANY(%s)` (the
 psycopg idiom) instead of Go's generated `kind IN ($1, ...)` placeholders —
 identical semantics. RequeueRunning is additionally scoped to this worker's
-kinds; see requeue_running below.
+kinds; see requeue_running below. defer() implements the D-14 carry-over
+sanctioned by the backend contract (job_repository.go: an *unstarted*
+claimed job may be returned to pending with its attempts increment rolled
+back).
 """
 
 from dataclasses import dataclass
@@ -124,6 +127,27 @@ RETURNING id, kind, payload, status, attempts, last_error, run_after, created_at
                 )
             if cur.rowcount == 0:
                 raise JobStoreError("mark_failed: no rows affected")
+
+    def defer(self, job_id: int) -> None:
+        """Return an *unstarted* claimed job to the queue without consuming
+
+        an attempt (D-14 carry-over): status back to pending, the claim's
+        attempts increment rolled back. run_after is left unchanged — the
+        worker stops claiming for the night after its first deferral, so
+        the job is simply first in line the next night.
+
+        Only legal while processing has not started (nothing written, no
+        transcription compute spent); once a job has started, failures must
+        go through mark_failed. Backend contract note: repository.JobRepository
+        (job_repository.go) permits the attempts rollback for untouched jobs.
+        """
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "UPDATE jobs SET status = 'pending', attempts = attempts - 1 WHERE id = %s",
+                (job_id,),
+            )
+            if cur.rowcount == 0:
+                raise JobStoreError("defer: no rows affected")
 
     def requeue_running(self, *kinds: str) -> int:
         """Flip stale running jobs of our kinds back to pending (backend RequeueRunning).
