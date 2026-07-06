@@ -63,9 +63,6 @@ Thumbs.db
 *.log
 logs/
 
-# Generated gRPC code (optional: can be committed or regenerated)
-# src/catchup_ai/api/grpc/generated/*.py
-
 # Secrets (never commit these)
 *.pem
 *.key
