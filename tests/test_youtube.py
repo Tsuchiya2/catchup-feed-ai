@@ -4,13 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from pulse_transcribe.errors import BudgetExceededError
+from pulse_transcribe.errors import BudgetExceededError, PayloadError
 from pulse_transcribe.whisper import TranscriptionResult
 from pulse_transcribe.youtube import (
     VideoInfo,
     _parse_json3,
     _parse_vtt_or_srt,
+    download_audio,
     extract_subtitle_text,
+    probe_video,
     transcribe_youtube,
 )
 
@@ -223,6 +225,22 @@ def test_metadata_duration_over_budget_defers_before_download() -> None:
             download=fake_download_factory(downloads),
         )
     assert downloads == []  # 事前判定: nothing was downloaded
+
+
+@pytest.mark.parametrize("url", ["ftp://example.com/v.mp4", "file:///etc/passwd", "not-a-url"])
+def test_probe_video_rejects_non_http_urls(url: str) -> None:
+    """Same scheme guard as media.download_media (defense in depth);
+
+    the check fires before yt-dlp is even imported, so no network is hit.
+    """
+    with pytest.raises(PayloadError):
+        probe_video(url)
+
+
+@pytest.mark.parametrize("url", ["ftp://example.com/v.mp4", "file:///etc/passwd", "not-a-url"])
+def test_download_audio_rejects_non_http_urls(url: str, tmp_path: Path) -> None:
+    with pytest.raises(PayloadError):
+        download_audio(url, tmp_path)
 
 
 def test_temp_dir_cleaned_up_when_whisper_fails() -> None:

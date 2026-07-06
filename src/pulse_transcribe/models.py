@@ -2,12 +2,25 @@
 
 import json
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from pulse_transcribe.errors import PayloadError
 
 SOURCE_KIND_YOUTUBE = "youtube"
 SOURCE_KIND_PODCAST = "podcast"
 _SOURCE_KINDS = frozenset({SOURCE_KIND_YOUTUBE, SOURCE_KIND_PODCAST})
+
+
+def require_http_url(url: str) -> str:
+    """Reject non-http(s) media URLs before they reach any downloader.
+
+    A permanent failure: a file:// or ftp:// payload will never become
+    fetchable by retrying.
+    """
+    scheme = urlsplit(url).scheme.lower()
+    if scheme not in ("http", "https"):
+        raise PayloadError(f"media_url must be http(s), got scheme {scheme!r}")
+    return url
 
 
 @dataclass(frozen=True, slots=True)

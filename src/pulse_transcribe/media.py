@@ -15,8 +15,7 @@ from urllib.parse import urlsplit
 
 import structlog
 
-from pulse_transcribe.errors import PayloadError
-from pulse_transcribe.models import Transcript
+from pulse_transcribe.models import Transcript, require_http_url
 from pulse_transcribe.whisper import WhisperTranscriber
 
 logger: structlog.typing.FilteringBoundLogger = structlog.get_logger(__name__)
@@ -30,9 +29,7 @@ def download_media(url: str, dest_dir: Path) -> Path:
 
     Redirects are followed (enclosure URLs commonly bounce through CDNs).
     """
-    scheme = urlsplit(url).scheme.lower()
-    if scheme not in ("http", "https"):
-        raise PayloadError(f"media_url must be http(s), got scheme {scheme!r}")
+    require_http_url(url)
 
     name = Path(urlsplit(url).path).name or "media"
     dest = dest_dir / name

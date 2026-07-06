@@ -24,7 +24,7 @@ from tempfile import TemporaryDirectory
 import structlog
 
 from pulse_transcribe.errors import BudgetExceededError, TranscriptionError
-from pulse_transcribe.models import Transcript
+from pulse_transcribe.models import Transcript, require_http_url
 from pulse_transcribe.whisper import WhisperTranscriber
 
 logger: structlog.typing.FilteringBoundLogger = structlog.get_logger(__name__)
@@ -47,6 +47,7 @@ class VideoInfo:
 
 def probe_video(url: str) -> VideoInfo:
     """Fetch video metadata (duration, subtitle tracks) without downloading."""
+    require_http_url(url)
     from yt_dlp import YoutubeDL
 
     opts = {"skip_download": True, "quiet": True, "no_warnings": True, "noplaylist": True}
@@ -65,6 +66,7 @@ def probe_video(url: str) -> VideoInfo:
 
 def download_audio(url: str, dest_dir: Path) -> Path:
     """Download the audio-only stream into dest_dir and return the file path."""
+    require_http_url(url)
     from yt_dlp import YoutubeDL
 
     opts = {
