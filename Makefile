@@ -22,13 +22,15 @@ run:
 test:
 	uv run pytest -v --cov=src
 
+# openwebui/ は src 外(Open WebUI に貼り付ける単一ファイル Tool)だが、
+# ruff / mypy(strict)とも同じ基準でチェックする。
 lint:
-	uv run ruff check src/ tests/
-	uv run mypy src/
+	uv run ruff check src/ tests/ openwebui/
+	uv run mypy src/ openwebui/
 
 format:
-	uv run ruff check --fix src/ tests/
-	uv run ruff format src/ tests/
+	uv run ruff check --fix src/ tests/ openwebui/
+	uv run ruff format src/ tests/ openwebui/
 
 clean:
 	rm -rf .venv/
