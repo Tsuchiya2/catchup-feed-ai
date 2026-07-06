@@ -234,7 +234,8 @@ class TranscribeWorker:
             self.store.defer(job.id)
         except Exception as defer_exc:
             # The row stays running and is swept back to pending at the
-            # next start (at the cost of the sweep's attempts increment).
+            # next start; the cost is that this claim's attempts increment
+            # is never rolled back for the job.
             log.error("jobs: defer failed", error=str(defer_exc), job_error=str(exc))
             return True
         log.info("jobs: job deferred, attempts rolled back (D-14)", reason=str(exc))

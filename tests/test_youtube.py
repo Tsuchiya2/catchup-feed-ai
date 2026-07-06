@@ -8,6 +8,7 @@ from pulse_transcribe.errors import BudgetExceededError, PayloadError
 from pulse_transcribe.whisper import TranscriptionResult
 from pulse_transcribe.youtube import (
     VideoInfo,
+    _fetch_url_text,
     _parse_json3,
     _parse_vtt_or_srt,
     download_audio,
@@ -241,6 +242,16 @@ def test_probe_video_rejects_non_http_urls(url: str) -> None:
 def test_download_audio_rejects_non_http_urls(url: str, tmp_path: Path) -> None:
     with pytest.raises(PayloadError):
         download_audio(url, tmp_path)
+
+
+@pytest.mark.parametrize("url", ["ftp://subs.example/x.vtt", "file:///etc/passwd"])
+def test_fetch_url_text_rejects_non_http_urls(url: str) -> None:
+    """Subtitle URLs come from yt-dlp metadata; guard them before urlopen
+
+    (same scheme check as probe/download — full symmetry).
+    """
+    with pytest.raises(PayloadError):
+        _fetch_url_text(url)
 
 
 def test_temp_dir_cleaned_up_when_whisper_fails() -> None:

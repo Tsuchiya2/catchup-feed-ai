@@ -91,6 +91,9 @@ def download_audio(url: str, dest_dir: Path) -> Path:
 
 
 def _fetch_url_text(url: str) -> str:
+    # Subtitle track URLs come from yt-dlp metadata; guard them like every
+    # other fetched URL (symmetry with probe_video / download_audio).
+    require_http_url(url)
     with urllib.request.urlopen(url, timeout=_FETCH_TIMEOUT_SECONDS) as resp:  # noqa: S310
         data: bytes = resp.read()
     return data.decode("utf-8", errors="replace")

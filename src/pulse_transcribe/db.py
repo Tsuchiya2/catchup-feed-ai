@@ -140,14 +140,19 @@ RETURNING id, kind, payload, status, attempts, last_error, run_after, created_at
         transcription compute spent); once a job has started, failures must
         go through mark_failed. Backend contract note: repository.JobRepository
         (job_repository.go) permits the attempts rollback for untouched jobs.
+
+        The status guard keeps a stray defer (e.g. two workers started by
+        hand) from silently decrementing attempts on a row someone else
+        already released or finished.
         """
         with self._conn.cursor() as cur:
             cur.execute(
-                "UPDATE jobs SET status = 'pending', attempts = attempts - 1 WHERE id = %s",
+                "UPDATE jobs SET status = 'pending', attempts = attempts - 1"
+                " WHERE id = %s AND status = 'running'",
                 (job_id,),
             )
             if cur.rowcount == 0:
-                raise JobStoreError("defer: no rows affected")
+                raise JobStoreError("defer: no running row for the job")
 
     def requeue_running(self, *kinds: str) -> int:
         """Flip stale running jobs of our kinds back to pending (backend RequeueRunning).
