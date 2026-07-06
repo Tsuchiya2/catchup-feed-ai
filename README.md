@@ -57,7 +57,9 @@ uv run pulse-books ingest ~/books/learning-go.pdf --title "Learning Go"
 uv run pulse-books search "goroutine とチャネルの違い" --top-k 5
 ```
 
-- 同じ PDF の再取り込みは既存 book の置き換え(chunks 削除→再投入。冪等)
+- 同じ PDF の再取り込みは既存 book の置き換え(chunks 削除→再投入。冪等)。
+  同一性キーは **PDF の絶対パス**(`books.file_path`)なので、同じ本をコピー・
+  リネームした別パスから取り込むと別 book として重複する点に注意
 - embedding は Ollama の **bge-m3**(D-12、1024次元)。次元が違うモデルを
   誤設定した場合は書き込み前に即エラー(`book_chunks` は `vector(1024)`)
 - `books` / `book_chunks` テーブルの作成は **backend のマイグレーションの責務**。

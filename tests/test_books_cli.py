@@ -161,3 +161,15 @@ def test_cli_search_reports_schema_missing_as_error(
     monkeypatch.setattr(cli, "OllamaEmbedder", lambda **kwargs: FakeEmbedder())
 
     assert cli.main(["search", "anything"]) == 1
+
+
+@pytest.mark.parametrize("bad_top_k", ["0", "-3", "five"])
+def test_cli_search_rejects_non_positive_top_k(
+    bad_top_k: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """argparse rejects bad --top-k up front (no raw Postgres traceback)."""
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["search", "anything", "--top-k", bad_top_k])
+
+    assert excinfo.value.code == 2  # argparse usage error
+    assert "--top-k" in capsys.readouterr().err
