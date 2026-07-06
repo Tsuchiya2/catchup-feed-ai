@@ -7,7 +7,7 @@ pulse Phase 2 の Python 実装。M3 Mac 上で夜間バッチ(launchd)として
 1. **transcribe worker**(`src/pulse_transcribe/`): Pi の Postgres の `jobs` テーブル
    (kind='transcribe')を poll し、YouTube / ポッドキャストを文字起こしして
    `articles.content` に保存する。以降は backend の既存要約連鎖が処理する
-2. **書籍 PDF RAG 取り込み**(`src/pulse_books/`): DRM フリー PDF → テキスト抽出(pypdf)
+2. **書籍 PDF RAG 取り込み**(`src/pulse_books/`): DRM フリー PDF → テキスト抽出(PyMuPDF)
    → チャンク化 → embedding(Ollama bge-m3、ローカル限定 C-12)→ Pi の pgvector
    (`books` / `book_chunks`)
 
@@ -57,6 +57,16 @@ uv run pulse-books ingest ~/books/learning-go.pdf --title "Learning Go"
 uv run pulse-books search "goroutine とチャネルの違い" --top-k 5
 ```
 
+- テキスト抽出は **PyMuPDF**。実書籍での検証で pypdf は埋め込みフォントの
+  CID→Unicode を解決できず日本語書籍の 80〜98% のページが文字化けしたため全面切替。
+  **PyMuPDF は AGPL-3.0** — pulse は個人利用・非配布のため許容(親裁定。
+  再配布・サービス化する場合は要再検討)
+- 暗号化 PDF の扱い(C-15 の精緻化): まず**空パスワードで復号を試み、開けたら取り込む**。
+  市販の DRM フリー PDF にはオーナーパスワードのみの暗号化(閲覧は自由)が多く、
+  これは正当な対象。実パスワードが必要な PDF(実質 DRM)のみ C-15 で拒否する
+- 抽出品質のヒューリスティクス警告: 日本語書籍なのに CJK 比率が異常に低い/
+  置換不能文字が多いページは「garbled」として warning ログに出る。取り込み時に
+  操作者が抽出品質の劣化に気づくための仕組みで、エラーにはしない
 - 同じ PDF の再取り込みは既存 book の置き換え(chunks 削除→再投入。冪等)。
   同一性キーは **PDF の絶対パス**(`books.file_path`)なので、同じ本をコピー・
   リネームした別パスから取り込むと別 book として重複する点に注意
@@ -84,7 +94,7 @@ make format  # ruff format
 ```
 
 テストは DB・ネットワーク・Whisper モデル・Ollama をモックした単体テストが基本
-(テスト用 PDF は pypdf でテスト内生成)。実 Postgres での検証
+(テスト用 PDF は pymupdf でテスト内生成。暗号化ケースも合成 PDF で再現)。実 Postgres での検証
 (`tests/test_db_integration.py` / `tests/test_books_db_integration.py`)は backend と
 同じ流儀で `TEST_DATABASE_URL` 設定時のみ実行される(専用スキーマを作るため開発用 DB を
 指してよい。書籍 RAG 側は pgvector 拡張が必要 — `pgvector/pgvector:pg18` コンテナ推奨)。
