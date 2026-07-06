@@ -1,8 +1,6 @@
 """Tests for text chunking strategies."""
 
-import pytest
-
-from catchup_ai.core.rag.chunker import ChunkStrategy, TextChunk, TextChunker
+from pulse_books.chunker import ChunkStrategy, TextChunk, TextChunker
 
 
 class TestTextChunk:
@@ -143,8 +141,12 @@ These are the results."""
         chunker = TextChunker()
         chunks = [
             TextChunk(text="A" * 100, start_index=0, end_index=100, chunk_index=0, total_chunks=3),
-            TextChunk(text="B" * 100, start_index=100, end_index=200, chunk_index=1, total_chunks=3),
-            TextChunk(text="C" * 100, start_index=200, end_index=300, chunk_index=2, total_chunks=3),
+            TextChunk(
+                text="B" * 100, start_index=100, end_index=200, chunk_index=1, total_chunks=3
+            ),
+            TextChunk(
+                text="C" * 100, start_index=200, end_index=300, chunk_index=2, total_chunks=3
+            ),
         ]
         # Each chunk is ~25 tokens, limit to 50 tokens = 2 chunks
         selected = chunker.fit_context_window(chunks, max_tokens=50)
@@ -155,7 +157,9 @@ These are the results."""
         chunker = TextChunker(min_chunk_size=50)
         chunks = [
             TextChunk(text="Small", start_index=0, end_index=5, chunk_index=0, total_chunks=2),
-            TextChunk(text="Also small", start_index=6, end_index=16, chunk_index=1, total_chunks=2),
+            TextChunk(
+                text="Also small", start_index=6, end_index=16, chunk_index=1, total_chunks=2
+            ),
         ]
         merged = chunker._merge_small_chunks(chunks)
         # Both chunks are smaller than min_chunk_size, should be merged
