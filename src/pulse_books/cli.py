@@ -106,6 +106,17 @@ def configure_logging(level: str) -> None:
     )
 
 
+def _positive_int(value: str) -> int:
+    """argparse type for --top-k: a friendly error instead of a Postgres one."""
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"must be an integer, got {value!r}") from exc
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be >= 1, got {value}")
+    return number
+
+
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="pulse-books",
@@ -126,7 +137,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     search_parser.add_argument("query", help="natural-language query")
     search_parser.add_argument(
-        "--top-k", type=int, default=5, help="number of chunks to return (default 5)"
+        "--top-k", type=_positive_int, default=5, help="number of chunks to return (default 5)"
     )
 
     return parser.parse_args(argv)
