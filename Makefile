@@ -1,9 +1,10 @@
-.PHONY: help dev test lint format clean
+.PHONY: help dev run test lint format clean
 
 help:
 	@echo "pulse-ai Development Commands"
 	@echo "============================="
 	@echo "dev    - Install all dependencies (including dev)"
+	@echo "run    - Run the transcribe worker (DATABASE_URL required; see .env.example)"
 	@echo "test   - Run tests"
 	@echo "lint   - Run linter (ruff) and type checker (mypy)"
 	@echo "format - Format code (ruff)"
@@ -11,6 +12,12 @@ help:
 
 dev:
 	uv sync --all-extras
+
+# 実運用は launchd の夜間起動(03:00)。--deadline 04:15 が既定で、
+# radio(04:30)の前に新規 claim を止める。手動実行時は必要に応じて
+# ARGS="--deadline HH:MM" を渡す。
+run:
+	uv run pulse-transcribe $(ARGS)
 
 test:
 	uv run pytest -v --cov=src
