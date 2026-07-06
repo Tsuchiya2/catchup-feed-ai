@@ -1,12 +1,25 @@
-"""Text chunking strategies for embedding and context.
+"""Text chunking strategies for embedding.
 
 Provides various strategies for splitting text into chunks suitable
-for embedding generation and LLM context windows.
+for embedding generation (book RAG ingestion, §6).
+
+Sentence splitting understands both Western terminators (". ! ?" followed
+by whitespace) and Japanese ones (「。」「!」「?」, no whitespace required —
+technical books here are mostly Japanese). A terminator inside a closing
+quote (「…。」) does not split, so the quote stays attached to its sentence.
 """
 
 import re
 from dataclasses import dataclass
 from enum import Enum
+
+# Split after ./!/? + whitespace (Western), or after 。/!/? even without
+# whitespace (Japanese) unless a closing bracket follows the terminator.
+_SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+|(?<=[。!?])(?![」』】)])\s*")
+
+# A chunk ending in a Japanese terminator needs no space before the next
+# sentence; a Western sentence does (re-joining what \s+ consumed).
+_NO_SPACE_BEFORE_NEXT = ("。", "!", "?", "」", "』")
 
 
 class ChunkStrategy(Enum):
@@ -128,10 +141,12 @@ class TextChunker:
         return chunks
 
     def _chunk_by_sentence(self, text: str) -> list[TextChunk]:
-        """Split text by sentences, merging small chunks."""
-        # Simple sentence splitting (handles ., !, ?)
-        sentence_pattern = r"(?<=[.!?])\s+"
-        sentences = re.split(sentence_pattern, text)
+        """Split text by sentences, merging small chunks.
+
+        Handles Western (. ! ?) and Japanese (。 ! ?) sentence endings;
+        see _SENTENCE_SPLIT_PATTERN.
+        """
+        sentences = _SENTENCE_SPLIT_PATTERN.split(text)
 
         chunks = []
         current_chunk = ""
@@ -143,9 +158,10 @@ class TextChunker:
             if not sentence:
                 continue
 
-            if len(current_chunk) + len(sentence) + 1 <= self.chunk_size:
+            separator = "" if current_chunk.endswith(_NO_SPACE_BEFORE_NEXT) else " "
+            if len(current_chunk) + len(separator) + len(sentence) <= self.chunk_size:
                 if current_chunk:
-                    current_chunk += " " + sentence
+                    current_chunk += separator + sentence
                 else:
                     current_chunk = sentence
             else:
@@ -162,7 +178,16 @@ class TextChunker:
                     chunk_index += 1
                     current_start += len(current_chunk) + 1
 
-                current_chunk = sentence
+                # A single sentence longer than chunk_size has no sentence
+                # boundary to cut at: last-resort fixed-size split.
+                if len(sentence) > self.chunk_size:
+                    for sub in self._chunk_fixed_size(sentence):
+                        sub.chunk_index = chunk_index
+                        chunks.append(sub)
+                        chunk_index += 1
+                    current_chunk = ""
+                else:
+                    current_chunk = sentence
 
         # Add remaining chunk
         if current_chunk:
@@ -218,9 +243,15 @@ class TextChunker:
                     chunk_index += 1
                     current_start += len(current_chunk) + 2
 
-                # If single paragraph exceeds chunk_size, split it
+                # A single paragraph exceeding chunk_size is split on
+                # sentence boundaries (Japanese-aware): book paragraphs
+                # routinely exceed 1000 characters, and a fixed-size split
+                # would cut mid-sentence — its ASCII-space word-boundary
+                # search never hits in Japanese text. A single over-long
+                # sentence still ends up fixed-size inside
+                # _chunk_by_sentence (last resort).
                 if len(para) > self.chunk_size:
-                    sub_chunks = self._chunk_fixed_size(para)
+                    sub_chunks = self._chunk_by_sentence(para)
                     for sub in sub_chunks:
                         sub.chunk_index = chunk_index
                         chunks.append(sub)
@@ -359,41 +390,3 @@ class TextChunker:
 
         merged.append(current)
         return merged
-
-    def estimate_tokens(self, text: str) -> int:
-        """Estimate token count for text.
-
-        Uses a rough estimate of ~4 characters per token.
-
-        Args:
-            text: Text to estimate
-
-        Returns:
-            Estimated token count
-        """
-        return len(text) // 4
-
-    def fit_context_window(
-        self, chunks: list[TextChunk], max_tokens: int = 4000
-    ) -> list[TextChunk]:
-        """Select chunks that fit within a token limit.
-
-        Args:
-            chunks: Available chunks (should be sorted by relevance)
-            max_tokens: Maximum tokens for context
-
-        Returns:
-            Chunks that fit within the limit
-        """
-        selected = []
-        total_tokens = 0
-
-        for chunk in chunks:
-            chunk_tokens = self.estimate_tokens(chunk.text)
-            if total_tokens + chunk_tokens <= max_tokens:
-                selected.append(chunk)
-                total_tokens += chunk_tokens
-            else:
-                break
-
-        return selected
