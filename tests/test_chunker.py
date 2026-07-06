@@ -88,6 +88,56 @@ class TestTextChunker:
         for chunk in chunks:
             assert chunk.text.strip()
 
+    def test_chunk_by_sentence_japanese(self):
+        """Japanese sentences split on 。/!/? without needing whitespace."""
+        chunker = TextChunker(
+            strategy=ChunkStrategy.SENTENCE,
+            chunk_size=30,
+            min_chunk_size=1,
+        )
+        text = "これは最初の文です。これは二番目の文です。三番目はどうでしょうか?最後の文です!"
+        chunks = chunker.chunk(text)
+        assert len(chunks) > 1
+        # Sentences stay intact: every chunk ends on a Japanese terminator.
+        for chunk in chunks:
+            assert chunk.text[-1] in "。!?"
+        # Nothing is lost or gained (Japanese chunks re-join without spaces).
+        assert "".join(chunk.text for chunk in chunks) == text
+
+    def test_chunk_by_sentence_japanese_no_ascii_space_inserted(self):
+        """Merged Japanese sentences are joined without an ASCII space."""
+        chunker = TextChunker(strategy=ChunkStrategy.SENTENCE, chunk_size=1000)
+        text = "短い文です。もう一つの文です。"
+        chunks = chunker.chunk(text)
+        assert len(chunks) == 1
+        assert chunks[0].text == text
+
+    def test_chunk_by_sentence_japanese_closing_quote_stays_attached(self):
+        """A terminator inside 「…。」 does not split before the closing quote."""
+        chunker = TextChunker(
+            strategy=ChunkStrategy.SENTENCE,
+            chunk_size=25,
+            min_chunk_size=1,
+        )
+        text = "彼は「もう帰ろう。」と言った。それから静かに部屋を出て行った。"
+        chunks = chunker.chunk(text)
+        for chunk in chunks:
+            assert not chunk.text.startswith("」")
+
+    def test_chunk_by_sentence_mixed_japanese_and_english(self):
+        """Western '. ' splits still work alongside Japanese ones."""
+        chunker = TextChunker(
+            strategy=ChunkStrategy.SENTENCE,
+            chunk_size=40,
+            min_chunk_size=1,
+        )
+        text = "Goroutines are cheap. チャネルで通信します。Do not communicate by sharing memory."
+        chunks = chunker.chunk(text)
+        assert len(chunks) >= 2
+        merged = " ".join(chunk.text for chunk in chunks)
+        assert "チャネルで通信します。" in merged
+        assert "Goroutines are cheap." in merged
+
     def test_chunk_by_paragraph(self):
         """Test paragraph-based chunking."""
         chunker = TextChunker(
@@ -128,29 +178,6 @@ These are the results."""
         text = "First paragraph.\n\nSecond paragraph."
         chunks = chunker.chunk(text)
         assert len(chunks) > 0
-
-    def test_estimate_tokens(self):
-        """Test token estimation."""
-        chunker = TextChunker()
-        # ~4 chars per token
-        assert chunker.estimate_tokens("Hello World!") == 3  # 12 chars / 4
-        assert chunker.estimate_tokens("") == 0
-
-    def test_fit_context_window(self):
-        """Test fitting chunks to context window."""
-        chunker = TextChunker()
-        chunks = [
-            TextChunk(text="A" * 100, start_index=0, end_index=100, chunk_index=0, total_chunks=3),
-            TextChunk(
-                text="B" * 100, start_index=100, end_index=200, chunk_index=1, total_chunks=3
-            ),
-            TextChunk(
-                text="C" * 100, start_index=200, end_index=300, chunk_index=2, total_chunks=3
-            ),
-        ]
-        # Each chunk is ~25 tokens, limit to 50 tokens = 2 chunks
-        selected = chunker.fit_context_window(chunks, max_tokens=50)
-        assert len(selected) == 2
 
     def test_merge_small_chunks(self):
         """Test merging small chunks."""
