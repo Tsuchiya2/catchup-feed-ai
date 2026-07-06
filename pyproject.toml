@@ -12,14 +12,16 @@ requires-python = ">=3.13"
 # directly (pydantic-settings pulls both transitively).
 dependencies = [
     "faster-whisper>=1.1.0",   # local transcription (D-11: large-v3-turbo)
-    "psycopg[binary]>=3.2",    # Pi PostgreSQL (jobs poll / articles UPDATE)
+    "psycopg[binary]>=3.2",    # Pi PostgreSQL (jobs + books/book_chunks)
     "pydantic-settings>=2.0.0",
+    "pypdf>=6.0",              # book PDF text extraction (P-4, BSD license)
     "structlog>=24.0.0",
     "yt-dlp>=2025.1.15",       # YouTube subtitles (stage 2) + audio download (stage 3)
 ]
 
 [project.scripts]
 pulse-transcribe = "pulse_transcribe.worker:main"
+pulse-books = "pulse_books.cli:main"
 
 [project.optional-dependencies]
 dev = [
