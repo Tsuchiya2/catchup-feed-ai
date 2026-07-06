@@ -14,7 +14,11 @@ dependencies = [
     "faster-whisper>=1.1.0",   # local transcription (D-11: large-v3-turbo)
     "psycopg[binary]>=3.2",    # Pi PostgreSQL (jobs + books/book_chunks)
     "pydantic-settings>=2.0.0",
-    "pypdf>=6.0",              # book PDF text extraction (P-4, BSD license)
+    # Book PDF text extraction (P-4). PyMuPDF is AGPL-3.0 — accepted (親裁定)
+    # because pulse is a personal, non-distributed tool. Replaced pypdf (BSD):
+    # pypdf garbled 80–98% of pages on real Japanese books (embedded-font
+    # CID→Unicode mappings it cannot resolve); PyMuPDF extracts them cleanly.
+    "pymupdf>=1.25",
     "structlog>=24.0.0",
     "yt-dlp>=2025.1.15",       # YouTube subtitles (stage 2) + audio download (stage 3)
 ]
@@ -56,6 +60,13 @@ warn_unused_configs = true
 [[tool.mypy.overrides]]
 module = ["yt_dlp", "faster_whisper"]
 ignore_missing_imports = true
+
+# pymupdf ships py.typed but most defs are unannotated, which strict mode
+# rejects (no-untyped-call). Skip following it so it is treated as Any,
+# like the packages above.
+[[tool.mypy.overrides]]
+module = ["pymupdf"]
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
