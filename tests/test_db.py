@@ -18,7 +18,7 @@ class FakeCursor:
         self.rowcount = rowcount
         self.executed: list[tuple[str, Any]] = []
 
-    def __enter__(self) -> "FakeCursor":
+    def __enter__(self) -> FakeCursor:
         return self
 
     def __exit__(

@@ -6,21 +6,21 @@ readme = "README.md"
 authors = [
     { name = "tsuchiya-yu2", email = "yuji2tsuchiya@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 # Runtime dependencies: only what the code actually imports (§7 依存の刷新).
 # pydantic / python-dotenv are NOT declared: pulse code imports neither
 # directly (pydantic-settings pulls both transitively).
 dependencies = [
-    "faster-whisper>=1.1.0",   # local transcription (D-11: large-v3-turbo)
-    "psycopg[binary]>=3.2",    # Pi PostgreSQL (jobs + books/book_chunks)
-    "pydantic-settings>=2.0.0",
+    "faster-whisper>=1.2.1",   # local transcription (D-11: large-v3-turbo)
+    "psycopg[binary]>=3.3.4",  # Pi PostgreSQL (jobs + books/book_chunks)
+    "pydantic-settings>=2.14.2",
     # Book PDF text extraction (P-4). PyMuPDF is AGPL-3.0 — accepted (親裁定)
     # because pulse is a personal, non-distributed tool. Replaced pypdf (BSD):
     # pypdf garbled 80–98% of pages on real Japanese books (embedded-font
     # CID→Unicode mappings it cannot resolve); PyMuPDF extracts them cleanly.
-    "pymupdf>=1.25",
-    "structlog>=24.0.0",
-    "yt-dlp>=2025.1.15",       # YouTube subtitles (stage 2) + audio download (stage 3)
+    "pymupdf>=1.28.0",
+    "structlog>=26.1.0",
+    "yt-dlp>=2026.7.4",        # YouTube subtitles (stage 2) + audio download (stage 3)
 ]
 
 [project.scripts]
@@ -29,10 +29,10 @@ pulse-books = "pulse_books.cli:main"
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.0",
-    "pytest-cov>=5.0.0",
-    "ruff>=0.4.0",
-    "mypy>=1.10.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.21",
+    "mypy>=2.2.0",
 ]
 
 [build-system]
@@ -45,13 +45,13 @@ sources = ["src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
