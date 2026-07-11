@@ -173,3 +173,23 @@ def test_cli_search_rejects_non_positive_top_k(
 
     assert excinfo.value.code == 2  # argparse usage error
     assert "--top-k" in capsys.readouterr().err
+
+
+def test_ingest_file_path_key_overrides_the_identity(make_pdf: MakePdf) -> None:
+    """D-25 (4): the book_ingest job worker ingests from a temp download but
+
+    records the Pi-canonical payload path as books.file_path. The default
+    (CLI) behavior — resolved local path — is covered above.
+    """
+    pdf = make_pdf(["Content ingested from a temporary copy."])
+    store = FakeStore()
+
+    cli.ingest(
+        pdf,
+        "Learning Go",
+        store,
+        FakeEmbedder(),  # type: ignore[arg-type]
+        file_path_key="/data/books/learning-go.pdf",
+    )
+
+    assert store.replace_calls[0][1] == "/data/books/learning-go.pdf"

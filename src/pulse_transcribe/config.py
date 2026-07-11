@@ -25,4 +25,12 @@ class Settings(BaseSettings):
     # jobs table poll interval while idle (backend default is also 10s).
     poll_interval_seconds: float = 10.0
 
+    # D-25: base URL of the Pi's tailnet-only private listener, e.g.
+    # "http://<pi の MagicDNS 名>:8081" (the :8081 bind from
+    # backend deploy/compose.pi.yml). When set, the worker also consumes
+    # kind='book_ingest' jobs, downloading the uploaded PDF from
+    # {base}/private/books/{filename} (no auth — the tailnet bind is the
+    # boundary, C-5). Unset: book_ingest jobs are left pending.
+    books_private_base_url: str | None = None
+
     log_level: str = "INFO"
