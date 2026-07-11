@@ -37,7 +37,7 @@ class TranscribePayload:
     source_kind: str  # 'youtube' | 'podcast'
 
     @classmethod
-    def parse(cls, raw: object) -> "TranscribePayload":
+    def parse(cls, raw: object) -> TranscribePayload:
         """Parse a jobs.payload value (dict from psycopg jsonb, or a JSON string).
 
         Raises PayloadError (permanent: retrying cannot fix a bad payload).
