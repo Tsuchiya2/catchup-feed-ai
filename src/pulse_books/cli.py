@@ -37,12 +37,21 @@ _SNIPPET_LENGTH = 200
 
 
 def ingest(
-    pdf_path: Path, title: str | None, store: BookStore, embedder: OllamaEmbedder
+    pdf_path: Path,
+    title: str | None,
+    store: BookStore,
+    embedder: OllamaEmbedder,
+    *,
+    file_path_key: str | None = None,
 ) -> IngestResult:
     """Run the full ingest pipeline for one PDF.
 
-    Idempotent: the book's identity is its resolved file path, so running
-    the same command twice replaces the previous import (BookStore).
+    Idempotent: the book's identity is books.file_path, so running the
+    same ingest twice replaces the previous import (BookStore). By default
+    the identity is the resolved path of pdf_path (the CLI semantics);
+    file_path_key overrides it for callers that ingest from a temporary
+    copy — the book_ingest job worker records the Pi-canonical payload
+    path, never its own temp download path (D-25 (4)).
     """
     resolved = pdf_path.resolve()
     book_title = title or resolved.stem
@@ -60,7 +69,7 @@ def ingest(
 
     result = store.replace_book(
         title=book_title,
-        file_path=str(resolved),
+        file_path=file_path_key or str(resolved),
         chunks=[
             Chunk(content=chunk.text, embedding=vector)
             for chunk, vector in zip(chunks, embeddings, strict=True)

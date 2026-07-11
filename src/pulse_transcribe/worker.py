@@ -17,6 +17,12 @@ only what §5 / D-14 require of the nightly batch:
 - Degradation (§5.3): a job failure is contained by MarkFailed; the loop
   itself never dies because of one job.
 
+The same run also consumes kind='book_ingest' (D-25, dashboard book
+uploads) when a book handler is configured: those jobs are drained *before*
+the transcribe loop starts and are exempt from the D-14 audio budget —
+embedding a book is minutes of local compute, a different species of work
+from transcription. Claim / status / attempts semantics are identical.
+
 All timestamps handed to the DB are timezone-aware: jobs.run_after is
 timestamptz and the Pi's Postgres session runs in UTC, so a naive local
 datetime would land hours off the intended instant.
@@ -35,12 +41,20 @@ import structlog
 from pulse_transcribe.config import Settings
 from pulse_transcribe.db import Job
 from pulse_transcribe.errors import BudgetExceededError, PermanentJobError, TranscriptionError
-from pulse_transcribe.models import SOURCE_KIND_YOUTUBE, TranscribePayload, Transcript
+from pulse_transcribe.models import (
+    SOURCE_KIND_YOUTUBE,
+    BookIngestPayload,
+    TranscribePayload,
+    Transcript,
+)
 
 logger: structlog.typing.FilteringBoundLogger = structlog.get_logger(__name__)
 
-# The only kind this worker claims (backend entity.JobKindTranscribe).
+# The kinds this worker claims (backend entity.JobKindTranscribe /
+# entity.JobKindBookIngest). It is the sole consumer of both: the Pi
+# consumer never registers handlers for them.
 JOB_KIND_TRANSCRIBE = "transcribe"
+JOB_KIND_BOOK_INGEST = "book_ingest"
 
 # Backend jobs.DefaultMaxAttempts — the §7 retry ceiling.
 MAX_ATTEMPTS = 3
@@ -77,11 +91,18 @@ class JobStoreLike(Protocol):
 # handler(payload, remaining_budget_seconds) -> Transcript.
 Handler = Callable[[TranscribePayload, float], Transcript]
 
+# book_handler(payload) -> None; raises to fail the job. No budget
+# argument: book ingest is exempt from D-14.
+BookHandler = Callable[[BookIngestPayload], None]
+
 
 @dataclass(slots=True)
 class TranscribeWorker:
     store: JobStoreLike
     handler: Handler
+    # None disables book_ingest consumption (jobs stay pending — degraded
+    # mode until BOOKS_PRIVATE_BASE_URL is configured).
+    book_handler: BookHandler | None = None
     budget_seconds: float = 7200.0  # D-14
     poll_interval_seconds: float = 10.0
     max_attempts: int = MAX_ATTEMPTS
@@ -95,12 +116,15 @@ class TranscribeWorker:
         """
         log = logger.bind(deadline=deadline.isoformat())
 
-        # Startup sweep, scoped to our own kind: this worker is the sole
-        # consumer of kind='transcribe', so a running row at startup can
-        # only be the orphan of a crashed previous run. Never sweep other
-        # kinds — the Pi worker owns those.
+        # Startup sweep, scoped to the kinds this run will claim: this
+        # worker is the sole consumer of them, so a running row at startup
+        # can only be the orphan of a crashed previous run. Never sweep
+        # other kinds — the Pi worker owns those.
+        kinds: tuple[str, ...] = (JOB_KIND_TRANSCRIBE,)
+        if self.book_handler is not None:
+            kinds = (JOB_KIND_TRANSCRIBE, JOB_KIND_BOOK_INGEST)
         try:
-            requeued = self.store.requeue_running(JOB_KIND_TRANSCRIBE)
+            requeued = self.store.requeue_running(*kinds)
             if requeued > 0:
                 log.warning("jobs: requeued stale running jobs from a previous run", count=requeued)
         except Exception as exc:
@@ -109,11 +133,16 @@ class TranscribeWorker:
 
         log.info(
             "jobs: transcribe worker started",
-            kind=JOB_KIND_TRANSCRIBE,
+            kinds=list(kinds),
             budget_seconds=self.budget_seconds,
             poll_interval=self.poll_interval_seconds,
             max_attempts=self.max_attempts,
         )
+
+        # D-25: books first. They are quick (minutes, no audio budget), so
+        # even a night whose transcribe budget runs out ingests every
+        # waiting book.
+        self._drain_book_jobs(deadline, log)
 
         consumed = 0.0
         while True:
@@ -207,6 +236,71 @@ class TranscribeWorker:
 
         log.info("jobs: job done", audio_seconds=round(transcript.audio_seconds, 1))
         return transcript.audio_seconds, False
+
+    def _drain_book_jobs(
+        self, deadline: datetime, log: structlog.typing.FilteringBoundLogger
+    ) -> int:
+        """Process every currently runnable book_ingest job (D-25).
+
+        Exempt from the D-14 budget by construction: nothing here touches
+        the audio-seconds accounting. The --deadline guard still applies
+        (an in-flight ingest finishes). A retryable failure gets the usual
+        linear-minutes run_after; the drain does not wait for it — with the
+        nightly cadence it is simply retried the next night.
+        """
+        if self.book_handler is None:
+            return 0
+        handled = 0
+        while self.now() < deadline:
+            try:
+                job = self.store.claim_next(JOB_KIND_BOOK_INGEST)
+            except Exception as exc:
+                # Unlike the transcribe loop there is no poll-and-retry
+                # here: leave the jobs for the next night (縮退許容).
+                log.error("jobs: book claim failed", error=str(exc))
+                break
+            if job is None:
+                break
+            self._process_book(job)
+            handled += 1
+        if handled:
+            log.info("jobs: book_ingest jobs drained", count=handled)
+        return handled
+
+    def _process_book(self, job: Job) -> None:
+        """Execute one claimed book_ingest job.
+
+        Same shape as _process minus everything budget-related: parse the
+        payload, run the handler, mark done; failures go through the shared
+        retry policy (linear minutes, attempts ceiling, permanent errors
+        terminal).
+        """
+        log = logger.bind(job_id=job.id, kind=job.kind, attempts=job.attempts)
+        log.info("jobs: job started")
+
+        try:
+            payload = BookIngestPayload.parse(job.payload)
+        except PermanentJobError as exc:
+            self._record_failure(job, exc, log)
+            return
+
+        assert self.book_handler is not None  # _drain_book_jobs guards this
+        try:
+            self.book_handler(payload)
+        except Exception as exc:
+            self._record_failure(job, exc, log)
+            return
+
+        try:
+            self.store.mark_done(job.id)
+        except Exception as exc:
+            # Same as _process: the row stays running and is swept back to
+            # pending at the next start; re-running replaces the book's
+            # chunks (idempotent by books.file_path).
+            log.error("jobs: mark done failed", error=str(exc))
+            return
+
+        log.info("jobs: job done", title=payload.title)
 
     def _handle_budget_exceeded(
         self, job: Job, exc: BudgetExceededError, log: structlog.typing.FilteringBoundLogger
@@ -357,9 +451,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     # autocommit: each statement commits on its own (like Go's database/sql),
     # which is what the SKIP LOCKED claim semantics assume.
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        book_handler: BookHandler | None = None
+        if settings.books_private_base_url:
+            from pulse_transcribe.book_ingest import default_book_handler
+
+            book_handler = default_book_handler(settings.books_private_base_url, conn)
+        else:
+            # Degraded mode (D-25): book_ingest jobs stay pending until the
+            # operator configures the fetch base URL.
+            logger.info(
+                "book_ingest: disabled (BOOKS_PRIVATE_BASE_URL not set); "
+                "book_ingest jobs are left pending"
+            )
         worker = TranscribeWorker(
             store=JobStore(conn),
             handler=default_handler(settings),
+            book_handler=book_handler,
             budget_seconds=settings.nightly_budget_seconds,
             poll_interval_seconds=settings.poll_interval_seconds,
         )
