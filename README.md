@@ -1,6 +1,6 @@
-# catchup-feed-ai (pulse-ai)
+# catchup-feed-ai
 
-**pulse**(旧 catchup-feed の後継)の Python コンポーネント。pulse は「毎朝10〜15分の音声ラジオ番組をポッドキャストアプリに配信する個人向け学習システム」で、最適化目標は配信量ではなく **理解の定着**。
+**catchup-feed**(ニュースアグリゲータだった初代 catchup-feed の後継)の Python コンポーネント。catchup-feed は「毎朝10〜15分の音声ラジオ番組をポッドキャストアプリに配信する個人向け学習システム」で、最適化目標は配信量ではなく **理解の定着**。
 
 このリポジトリはその **Phase 2(ソース多モーダル化 + 書籍 PDF RAG)** を担い、M3 Mac 上で夜間バッチ(launchd)/ 手動実行として動く。Pi 上の Go backend とは Postgres 経由でのみ連携する(内部 RPC なし)。
 
@@ -8,14 +8,14 @@
 
 ## このリポジトリの役割
 
-pulse における ai は 2 つの入力パイプラインを提供する。
+catchup-feed における ai は 2 つの入力パイプラインを提供する。
 
 1. **transcribe worker**(`src/pulse_transcribe/`)
    Pi の Postgres の `jobs` テーブル(`kind='transcribe'`)を poll し、YouTube / ポッドキャストを **faster-whisper** で文字起こしして `articles.content` に保存する。以降は backend の既存要約連鎖が処理し、毎朝のラジオに記事と同列で合流する。
 2. **書籍 PDF RAG 取り込み**(`src/pulse_books/`)
    DRM フリー PDF を **PyMuPDF** でテキスト抽出 → チャンク化 → **Ollama**(bge-m3)で embedding → Pi の pgvector(`books` / `book_chunks`)に保存。スマホから Open WebUI 経由でローカル LLM と壁打ちして書籍を消化する。
 
-### 設計原則(pulse から継承)
+### 設計原則(catchup-feed から継承)
 
 - **単一ユーザー右サイズ**: gRPC / Prometheus / マイクロサービス分割などの過剰な基盤は持たない。プロセス間連携は Postgres 経由のみ(C-4)。
 - **ゼロ円運用**: 有料 API・有料 SaaS 禁止。文字起こしはローカル faster-whisper のみ。
@@ -90,7 +90,7 @@ uv run pulse-books ingest ~/books/learning-go.pdf --title "Learning Go"
 uv run pulse-books search "goroutine とチャネルの違い" --top-k 5
 ```
 
-- テキスト抽出は **PyMuPDF**。実書籍検証で pypdf は埋め込みフォントの CID→Unicode を解決できず日本語書籍の 80〜98% のページが文字化けしたため全面切替。**PyMuPDF は AGPL-3.0** — pulse は個人利用・非配布のため許容(親裁定。再配布・サービス化する場合は要再検討)
+- テキスト抽出は **PyMuPDF**。実書籍検証で pypdf は埋め込みフォントの CID→Unicode を解決できず日本語書籍の 80〜98% のページが文字化けしたため全面切替。**PyMuPDF は AGPL-3.0** — catchup-feed は個人利用・非配布のため許容(親裁定。再配布・サービス化する場合は要再検討)
 - 暗号化 PDF(C-15 の精緻化): まず空パスワードで復号を試み、開けたら取り込む。市販の DRM フリー PDF に多いオーナーパスワードのみの暗号化(閲覧は自由)は正当な対象。実パスワードが必要な PDF(実質 DRM)のみ拒否
 - 抽出品質のヒューリスティクス警告: CJK 比率が異常に低い/置換不能文字が多いページは「garbled」として warning ログに出る(エラーにはしない)
 - 同じ PDF の再取り込みは既存 book の置き換え(chunks 削除→再投入。冪等)。同一性キーは **PDF の絶対パス**(`books.file_path`)なので、同じ本を別パスから取り込むと別 book として重複する点に注意
@@ -144,7 +144,7 @@ CI(`.github/workflows/ci.yml`)は uv で依存を同期し、ruff + mypy(strict)
 
 ## ライセンス
 
-本リポジトリは pulse の個人利用・非配布コンポーネントであり、再配布を前提としない。依存の **PyMuPDF は AGPL-3.0** である点に注意(個人利用・非配布のため許容。再配布・サービス化する場合は要再検討)。
+本リポジトリは catchup-feed の個人利用・非配布コンポーネントであり、再配布を前提としない。依存の **PyMuPDF は AGPL-3.0** である点に注意(個人利用・非配布のため許容。再配布・サービス化する場合は要再検討)。
 
 旧 catchup-ai(Cloud Run 上の gRPC AI サービス)のコードは Phase 2 の減量で削除済み。経緯は親リポジトリの `docs/ai-inventory.md` を、必要なら git 履歴を参照。
 </content>
