@@ -116,13 +116,15 @@ class TranscribeWorker:
         """
         log = logger.bind(deadline=deadline.isoformat())
 
-        # Startup sweep, scoped to the kinds this run will claim: this
-        # worker is the sole consumer of them, so a running row at startup
-        # can only be the orphan of a crashed previous run. Never sweep
+        # Startup sweep, scoped to the kinds this worker owns: it is the
+        # sole consumer of both 'transcribe' and 'book_ingest' (the Pi
+        # consumer never registers handlers for them), so a running row at
+        # startup can only be the orphan of a crashed previous run. Both
+        # kinds are swept unconditionally — even with book_ingest disabled
+        # (no book_handler), a crash orphan must go back to pending instead
+        # of showing "processing" on the dashboard forever. Never sweep
         # other kinds — the Pi worker owns those.
-        kinds: tuple[str, ...] = (JOB_KIND_TRANSCRIBE,)
-        if self.book_handler is not None:
-            kinds = (JOB_KIND_TRANSCRIBE, JOB_KIND_BOOK_INGEST)
+        kinds: tuple[str, ...] = (JOB_KIND_TRANSCRIBE, JOB_KIND_BOOK_INGEST)
         try:
             requeued = self.store.requeue_running(*kinds)
             if requeued > 0:
@@ -245,8 +247,10 @@ class TranscribeWorker:
         Exempt from the D-14 budget by construction: nothing here touches
         the audio-seconds accounting. The --deadline guard still applies
         (an in-flight ingest finishes). A retryable failure gets the usual
-        linear-minutes run_after; the drain does not wait for it — with the
-        nightly cadence it is simply retried the next night.
+        linear-minutes run_after; the drain never sleeps waiting for it,
+        but if later jobs keep the drain busy past that backoff, the job
+        becomes claimable and is retried within the same drain — otherwise
+        it is picked up the next night.
         """
         if self.book_handler is None:
             return 0
@@ -455,7 +459,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         if settings.books_private_base_url:
             from pulse_transcribe.book_ingest import default_book_handler
 
-            book_handler = default_book_handler(settings.books_private_base_url, conn)
+            try:
+                book_handler = default_book_handler(settings.books_private_base_url, conn)
+            except ValueError as exc:
+                # 縮退許容: a misconfigured base URL disables book_ingest
+                # only — the night's transcription must not die with it.
+                # Visible the next morning in this log and as pending
+                # book_ingest jobs on the dashboard.
+                logger.error(
+                    "book_ingest: disabled (invalid BOOKS_PRIVATE_BASE_URL); "
+                    "book_ingest jobs are left pending",
+                    error=str(exc),
+                )
         else:
             # Degraded mode (D-25): book_ingest jobs stay pending until the
             # operator configures the fetch base URL.
