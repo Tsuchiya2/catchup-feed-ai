@@ -117,7 +117,7 @@ def test_cli_ingest_smoke(make_pdf: MakePdf, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("DATABASE_URL", "postgresql://ignored/ignored")
 
     class FakeConn:
-        def __enter__(self) -> "FakeConn":
+        def __enter__(self) -> FakeConn:
             return self
 
         def __exit__(self, *args: object) -> None:
@@ -148,7 +148,7 @@ def test_cli_search_reports_schema_missing_as_error(
     monkeypatch.setenv("DATABASE_URL", "postgresql://ignored/ignored")
 
     class FakeConn:
-        def __enter__(self) -> "FakeConn":
+        def __enter__(self) -> FakeConn:
             return self
 
         def __exit__(self, *args: object) -> None:
