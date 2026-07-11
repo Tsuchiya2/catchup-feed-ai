@@ -17,8 +17,13 @@ from conftest import write_pdf
 
 from pulse_books.db import Chunk, IngestResult, SearchHit
 from pulse_books.embedding import EMBEDDING_DIM
-from pulse_books.errors import PdfExtractionError
-from pulse_transcribe.book_ingest import book_url, download_book, ingest_book
+from pulse_books.errors import EmbeddingError, PdfExtractionError
+from pulse_transcribe.book_ingest import (
+    book_url,
+    default_book_handler,
+    download_book,
+    ingest_book,
+)
 from pulse_transcribe.errors import PermanentJobError
 from pulse_transcribe.models import BookIngestPayload
 
@@ -114,11 +119,16 @@ def test_ingest_book_removes_the_temp_copy_on_success() -> None:
     assert not dests[0].parent.exists()  # 生ファイル非永続
 
 
-def test_ingest_book_removes_the_temp_copy_on_failure() -> None:
+def test_ingest_book_pdf_extraction_failure_is_permanent_and_cleans_up() -> None:
+    """A broken/empty PDF is deterministic: PdfExtractionError is wrapped
+
+    into PermanentJobError so the job fails terminally instead of burning
+    the 3 attempts. The temp copy is removed either way.
+    """
     store = FakeStore()
     _, dests, download = pdf_download(["", ""])  # blank pages → no chunks
 
-    with pytest.raises(PdfExtractionError):
+    with pytest.raises(PermanentJobError) as excinfo:
         ingest_book(
             PAYLOAD,
             BASE_URL,
@@ -127,8 +137,31 @@ def test_ingest_book_removes_the_temp_copy_on_failure() -> None:
             download=download,
         )
 
+    assert isinstance(excinfo.value.__cause__, PdfExtractionError)
     assert not dests[0].parent.exists()
     assert store.replace_calls == []  # nothing written
+
+
+def test_ingest_book_embedding_failure_stays_retryable() -> None:
+    """EmbeddingError (e.g. Ollama down) must NOT be wrapped as permanent."""
+
+    class DownEmbedder:
+        def embed(self, texts: Sequence[str]) -> list[list[float]]:
+            raise EmbeddingError("cannot reach Ollama")
+
+        def embed_one(self, text: str) -> list[float]:
+            return self.embed([text])[0]
+
+    _, _, download = pdf_download(["Some content that chunks fine."])
+
+    with pytest.raises(EmbeddingError):
+        ingest_book(
+            PAYLOAD,
+            BASE_URL,
+            FakeStore(),  # type: ignore[arg-type]
+            DownEmbedder(),  # type: ignore[arg-type]
+            download=download,
+        )
 
 
 def test_ingest_book_download_failure_propagates_and_cleans_up() -> None:
@@ -183,3 +216,16 @@ def test_download_book_other_http_errors_stay_retryable(
 
     with pytest.raises(urllib.error.HTTPError):
         download_book("http://pi:8081/private/books/x.pdf", tmp_path / "x.pdf")
+
+
+# --- default_book_handler --------------------------------------------------------
+
+
+def test_default_book_handler_rejects_a_non_http_base_url() -> None:
+    """The scheme check fires before anything touches the DB or env; the
+
+    caller (worker.main) downgrades this to "book_ingest disabled" so the
+    night's transcription survives the misconfiguration.
+    """
+    with pytest.raises(ValueError, match="BOOKS_PRIVATE_BASE_URL"):
+        default_book_handler("ftp://pi:8081", None)  # type: ignore[arg-type]

@@ -168,11 +168,15 @@ def test_success_updates_content_before_mark_done() -> None:
     assert store.failed == []
 
 
-def test_startup_requeue_is_scoped_to_transcribe() -> None:
+def test_startup_requeue_is_scoped_to_the_kinds_this_worker_owns() -> None:
+    """Both owned kinds are swept unconditionally (sole consumer of both);
+
+    other kinds — the Pi worker's — are never touched.
+    """
     clock = FakeClock()
     store = FakeStore()
     make_worker(store, lambda p, r: Transcript("x", 0.0), clock).run(deadline_in(clock, 5))
-    assert store.requeue_calls == [(JOB_KIND_TRANSCRIBE,)]
+    assert store.requeue_calls == [(JOB_KIND_TRANSCRIBE, JOB_KIND_BOOK_INGEST)]
 
 
 def test_idle_poll_sleeps_until_deadline() -> None:
@@ -520,7 +524,7 @@ def test_book_jobs_run_even_with_zero_transcribe_budget() -> None:
     assert store.done == [1]
 
 
-def test_without_book_handler_book_jobs_are_never_claimed() -> None:
+def test_without_book_handler_book_jobs_are_swept_but_never_claimed() -> None:
     clock = FakeClock()
     store = FakeStore([make_book_job(job_id=1)])
 
@@ -528,7 +532,9 @@ def test_without_book_handler_book_jobs_are_never_claimed() -> None:
 
     assert store.claims == []
     assert len(store.pending) == 1  # left pending (degraded mode)
-    assert store.requeue_calls == [(JOB_KIND_TRANSCRIBE,)]
+    # The sweep still covers book_ingest (crash orphans must not show
+    # "processing" forever), but no claim ever includes the kind.
+    assert store.requeue_calls == [(JOB_KIND_TRANSCRIBE, JOB_KIND_BOOK_INGEST)]
     assert all(kinds == (JOB_KIND_TRANSCRIBE,) for kinds in store.claim_kinds)
 
 

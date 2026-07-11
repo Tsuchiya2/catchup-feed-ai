@@ -35,8 +35,10 @@ import structlog
 from pulse_books.cli import ingest
 from pulse_books.db import BookStore, IngestResult
 from pulse_books.embedding import OllamaEmbedder
+from pulse_books.errors import PdfExtractionError
 from pulse_transcribe.errors import PermanentJobError
 from pulse_transcribe.models import BookIngestPayload
+from pulse_transcribe.worker import BookHandler
 
 logger: structlog.typing.FilteringBoundLogger = structlog.get_logger(__name__)
 
@@ -47,9 +49,6 @@ _USER_AGENT = "pulse-transcribe/0.1"
 
 # download(url, dest) writes the PDF to dest. Injectable for tests.
 Download = Callable[[str, Path], None]
-
-# The production handler shape the worker loop calls per claimed job.
-BookHandler = Callable[[BookIngestPayload], None]
 
 
 def book_url(base_url: str, filename: str) -> str:
@@ -102,16 +101,26 @@ def ingest_book(
             bytes=dest.stat().st_size,
             title=payload.title,
         )
-        return ingest(dest, payload.title, store, embedder, file_path_key=payload.file_path)
+        try:
+            return ingest(dest, payload.title, store, embedder, file_path_key=payload.file_path)
+        except PdfExtractionError as exc:
+            # Deterministic failure: a PDF that cannot be opened or yields
+            # no text (broken file, real read password = DRM per C-15,
+            # image-only scan) will not fix itself by retrying — fail
+            # terminally instead of burning 3 attempts. EmbeddingError
+            # (e.g. Ollama down) deliberately stays retryable.
+            raise PermanentJobError(str(exc)) from exc
 
 
 def default_book_handler(base_url: str, conn: psycopg.Connection[Any]) -> BookHandler:
     """The production handler: shared DB connection, local Ollama embedder.
 
     Reads the pulse_books settings (OLLAMA_HOST / EMBEDDING_MODEL) from the
-    same environment the CLI uses. The base URL is operator configuration,
-    so a bad scheme fails the whole run at startup instead of burning job
-    attempts.
+    same environment the CLI uses. The base URL is operator configuration:
+    a bad scheme raises ValueError here, before any job is claimed, and the
+    caller (worker.main) downgrades that to "book_ingest disabled" so a
+    typo never takes the night's transcription down with it (縮退許容 —
+    the jobs stay pending and no attempts are burned).
     """
     scheme = urlsplit(base_url).scheme.lower()
     if scheme not in ("http", "https"):
