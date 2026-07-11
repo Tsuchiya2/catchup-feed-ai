@@ -57,14 +57,14 @@ class FakeConnection:
         self.rows = rows
         self.calls: list[tuple[str, dict[str, object]]] = []
 
-    def execute(self, sql: str, params: dict[str, object]) -> "FakeConnection":
+    def execute(self, sql: str, params: dict[str, object]) -> FakeConnection:
         self.calls.append((sql, params))
         return self
 
     def fetchall(self) -> list[tuple[Any, ...]]:
         return self.rows
 
-    def __enter__(self) -> "FakeConnection":
+    def __enter__(self) -> FakeConnection:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
