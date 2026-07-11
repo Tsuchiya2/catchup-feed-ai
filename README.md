@@ -61,6 +61,8 @@ cp .env.example .env   # DATABASE_URL 等を記入(キー一覧とコメント�
 
 ```
 jobs poll(SKIP LOCKED claim、意味論は backend internal/jobs が正)
+ ├─ book_ingest(D-25、最初に全件消化): /private/books/<filename> から PDF 一時取得
+ │   → pulse_books の ingest(抽出→チャンク化→Ollama embedding→pgvector)
  ├─ youtube:  字幕取得(公式→自動生成)→ 取れなければ yt-dlp 音声 + faster-whisper
  └─ podcast:  enclosure ダウンロード + faster-whisper
  → articles.content に UPDATE → MarkDone(失敗は attempts 上限3で failed)
@@ -80,10 +82,16 @@ make run ARGS="--deadline 06:00"
 - **D-14**: 1回の実行で文字起こしする音源は合計2時間まで(`NIGHTLY_BUDGET_SECONDS`)。残予算に収まらないジョブは **attempts を消費せず** pending に戻し、その夜は以降 claim せず正常終了(翌夜は先頭からフル予算で処理)。単体で2時間を超える長尺は足切りで failed(§5.3)
 - **実行時間ガード**: `--deadline HH:MM`(既定 04:15)を過ぎたら新規 claim を止めて終了。処理途中のジョブは完遂する(radio 04:30 を侵食しない)
 - 音声・動画ファイルは一時ディレクトリで完結し、成功・失敗どちらでも削除される
+- **book_ingest(D-25)**: `BOOKS_PRIVATE_BASE_URL` を設定すると、ダッシュボードから Pi にアップロードされた書籍 PDF の取り込みジョブ(kind='book_ingest')も消化する。文字起こしの前に全件処理し、**D-14 の音源予算は適用されない**(embedding は数分で終わる別種の仕事)。PDF は tailnet 専用エンドポイント `GET /private/books/<ファイル名>`(無認証 — tailnet バインドが境界、C-5)から一時取得し、成功・失敗どちらでも削除。`books.file_path`(同一性キー)には一時パスではなく payload の Pi 正準パスを記録する(CLI ingest と同じ冪等意味論)。未設定または URL 不正なら book_ingest のみ無効化され、ジョブは pending のまま(縮退動作。文字起こしは通常どおり実行)
 
 ### 書籍 RAG 取り込み(pulse-books)
 
-夜間バッチではなく、書籍を買ったときに Mac 上で手動実行する。
+取り込み経路は2つ(パイプラインと冪等意味論は完全に共通):
+
+1. **ダッシュボード経由(D-25、推奨)**: frontend から PDF をアップロード →
+   Pi の `BOOKS_DIR` に保存 + `kind='book_ingest'` ジョブ投入 → 夜間の
+   transcribe worker が取り込む(上記「transcribe worker」参照)
+2. **CLI(手動、併存継続)**: Mac 上のローカル PDF を直接取り込む
 
 ```sh
 uv run pulse-books ingest ~/books/learning-go.pdf --title "Learning Go"
@@ -93,7 +101,7 @@ uv run pulse-books search "goroutine とチャネルの違い" --top-k 5
 - テキスト抽出は **PyMuPDF**。実書籍検証で pypdf は埋め込みフォントの CID→Unicode を解決できず日本語書籍の 80〜98% のページが文字化けしたため全面切替。**PyMuPDF は AGPL-3.0** — catchup-feed は個人利用・非配布のため許容(親裁定。再配布・サービス化する場合は要再検討)
 - 暗号化 PDF(C-15 の精緻化): まず空パスワードで復号を試み、開けたら取り込む。市販の DRM フリー PDF に多いオーナーパスワードのみの暗号化(閲覧は自由)は正当な対象。実パスワードが必要な PDF(実質 DRM)のみ拒否
 - 抽出品質のヒューリスティクス警告: CJK 比率が異常に低い/置換不能文字が多いページは「garbled」として warning ログに出る(エラーにはしない)
-- 同じ PDF の再取り込みは既存 book の置き換え(chunks 削除→再投入。冪等)。同一性キーは **PDF の絶対パス**(`books.file_path`)なので、同じ本を別パスから取り込むと別 book として重複する点に注意
+- 同じ PDF の再取り込みは既存 book の置き換え(chunks 削除→再投入。冪等)。同一性キーは **PDF の絶対パス**(`books.file_path`。CLI は Mac 上の実パス、ダッシュボード経由は payload の Pi 正準パス `BOOKS_DIR/<ファイル名>`)なので、同じ本を別パスから取り込むと別 book として重複する点に注意
 - embedding は Ollama の **bge-m3**(D-12、1024次元)。次元が違うモデルを誤設定した場合は書き込み前に即エラー(`book_chunks` は `vector(1024)`)
 - `books` / `book_chunks` テーブルの作成は **backend のマイグレーションの責務**。未適用ならその旨のエラーで止まる
 - `search` は取り込みの動作確認用。壁打ち UI(Open WebUI)は同じ SQL(`pulse_books.db.SEARCH_SQL`)を再利用する
@@ -107,8 +115,9 @@ uv run pulse-books search "goroutine とチャネルの違い" --top-k 5
 | `DATABASE_URL` | (必須) | Pi の PostgreSQL(Tailscale 経由、radio と同じ方式) |
 | `WHISPER_MODEL` | `large-v3-turbo` | faster-whisper モデル(D-11) |
 | `WHISPER_DEVICE` / `WHISPER_COMPUTE_TYPE` | `auto` / `auto` | CTranslate2 実行設定(CPU 高速化は `int8`) |
-| `NIGHTLY_BUDGET_SECONDS` | `7200` | D-14: 1夜の音源合計上限(秒) |
+| `NIGHTLY_BUDGET_SECONDS` | `7200` | D-14: 1夜の音源合計上限(秒)。book_ingest には非適用 |
 | `POLL_INTERVAL_SECONDS` | `10` | jobs poll 間隔 |
+| `BOOKS_PRIVATE_BASE_URL` | (未設定=無効) | D-25: Pi の tailnet 専用リスナーのベース URL(例 `http://<pi>.<tailnet>.ts.net:8081`)。設定すると book_ingest ジョブも消化する |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama エンドポイント(pulse-books) |
 | `EMBEDDING_MODEL` | `bge-m3` | embedding モデル(D-12、1024次元必須) |
 | `LOG_LEVEL` | `INFO` | ログレベル |

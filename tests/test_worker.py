@@ -2,7 +2,8 @@
 
 Covers the semantics ported from the backend consumer (retry policy,
 attempts ceiling, failure containment) plus the worker-specific guards:
-the D-14 nightly audio budget and the --deadline cutoff.
+the D-14 nightly audio budget, the --deadline cutoff and the
+budget-exempt book_ingest drain (D-25).
 """
 
 from datetime import datetime, timedelta
@@ -11,9 +12,11 @@ import pytest
 
 from pulse_transcribe.db import Job
 from pulse_transcribe.errors import BudgetExceededError, PermanentJobError
-from pulse_transcribe.models import TranscribePayload, Transcript
+from pulse_transcribe.models import BookIngestPayload, TranscribePayload, Transcript
 from pulse_transcribe.worker import (
+    JOB_KIND_BOOK_INGEST,
     JOB_KIND_TRANSCRIBE,
+    BookHandler,
     TranscribeWorker,
     aware_now,
     next_deadline,
@@ -40,13 +43,14 @@ class FakeClock:
 
 
 class FakeStore:
-    """In-memory JobStoreLike: claims pop in insertion order."""
+    """In-memory JobStoreLike: claims pop in insertion order, per kind."""
 
     def __init__(
         self, jobs: list[Job] | None = None, missing_articles: set[int] | None = None
     ) -> None:
         self.pending: list[Job] = list(jobs or [])
         self.claims: list[Job] = []
+        self.claim_kinds: list[tuple[str, ...]] = []
         self.done: list[int] = []
         self.failed: list[tuple[int, str, datetime | None]] = []
         self.deferred: list[int] = []
@@ -60,11 +64,13 @@ class FakeStore:
         return 0
 
     def claim_next(self, *kinds: str) -> Job | None:
-        if not self.pending:
-            return None
-        job = self.pending.pop(0)
-        self.claims.append(job)
-        return job
+        self.claim_kinds.append(kinds)
+        for index, job in enumerate(self.pending):
+            if job.kind in kinds:
+                self.pending.pop(index)
+                self.claims.append(job)
+                return job
+        return None
 
     def mark_done(self, job_id: int) -> None:
         self.op_order.append(f"done:{job_id}")
@@ -106,16 +112,37 @@ def make_job(job_id: int = 1, attempts: int = 1, article_id: int = 10, **payload
     )
 
 
+def make_book_job(
+    job_id: int = 1,
+    attempts: int = 1,
+    file_path: str = "/data/books/learning-go.pdf",
+    title: str = "Learning Go",
+) -> Job:
+    """A claimed book_ingest job as the store returns it (D-25)."""
+    return Job(
+        id=job_id,
+        kind=JOB_KIND_BOOK_INGEST,
+        payload={"file_path": file_path, "title": title},
+        status="running",
+        attempts=attempts,
+        last_error=None,
+        run_after=START,
+        created_at=START,
+    )
+
+
 def make_worker(
     store: FakeStore,
     handler: object,
     clock: FakeClock,
     budget_seconds: float = 7200.0,
     poll_interval_seconds: float = 10.0,
+    book_handler: BookHandler | None = None,
 ) -> TranscribeWorker:
     return TranscribeWorker(
         store=store,
         handler=handler,  # type: ignore[arg-type]
+        book_handler=book_handler,
         budget_seconds=budget_seconds,
         poll_interval_seconds=poll_interval_seconds,
         now=clock.now,
@@ -141,11 +168,15 @@ def test_success_updates_content_before_mark_done() -> None:
     assert store.failed == []
 
 
-def test_startup_requeue_is_scoped_to_transcribe() -> None:
+def test_startup_requeue_is_scoped_to_the_kinds_this_worker_owns() -> None:
+    """Both owned kinds are swept unconditionally (sole consumer of both);
+
+    other kinds — the Pi worker's — are never touched.
+    """
     clock = FakeClock()
     store = FakeStore()
     make_worker(store, lambda p, r: Transcript("x", 0.0), clock).run(deadline_in(clock, 5))
-    assert store.requeue_calls == [(JOB_KIND_TRANSCRIBE,)]
+    assert store.requeue_calls == [(JOB_KIND_TRANSCRIBE, JOB_KIND_BOOK_INGEST)]
 
 
 def test_idle_poll_sleeps_until_deadline() -> None:
@@ -443,6 +474,215 @@ def test_claim_error_is_contained_and_retried_after_sleep() -> None:
 
     assert store.claim_attempts == 2  # 0s and 10s marks, then deadline
     assert clock.sleeps == [10.0, 5.0]
+
+
+# --- book_ingest (D-25) ------------------------------------------------------
+
+
+def test_book_jobs_drain_before_transcribe_and_skip_the_budget() -> None:
+    """D-25: book jobs run first and are exempt from the D-14 budget —
+
+    a zero-remaining transcribe budget must not starve them, and their
+    processing must not consume audio seconds.
+    """
+    clock = FakeClock()
+    store = FakeStore(
+        [
+            make_job(job_id=1, article_id=11),
+            make_book_job(job_id=2),
+            make_book_job(job_id=3, file_path="/data/books/other.pdf", title="Other"),
+        ]
+    )
+    ingested: list[BookIngestPayload] = []
+
+    consumed = make_worker(
+        store,
+        lambda p, r: Transcript("text", 100.0),
+        clock,
+        book_handler=ingested.append,
+    ).run(deadline_in(clock, 3600))
+
+    # Books first (even though the transcribe job was enqueued earlier).
+    assert [j.id for j in store.claims] == [2, 3, 1]
+    assert store.done == [2, 3, 1]
+    assert [p.title for p in ingested] == ["Learning Go", "Other"]
+    assert consumed == 100.0  # only the transcribe job counted (D-14 untouched)
+
+
+def test_book_jobs_run_even_with_zero_transcribe_budget() -> None:
+    clock = FakeClock()
+    store = FakeStore([make_book_job(job_id=1)])
+
+    make_worker(
+        store,
+        lambda p, r: Transcript("x", 0.0),
+        clock,
+        budget_seconds=0.0,
+        book_handler=lambda payload: None,
+    ).run(deadline_in(clock, 3600))
+
+    assert store.done == [1]
+
+
+def test_without_book_handler_book_jobs_are_swept_but_never_claimed() -> None:
+    clock = FakeClock()
+    store = FakeStore([make_book_job(job_id=1)])
+
+    make_worker(store, lambda p, r: Transcript("x", 0.0), clock).run(deadline_in(clock, 5))
+
+    assert store.claims == []
+    assert len(store.pending) == 1  # left pending (degraded mode)
+    # The sweep still covers book_ingest (crash orphans must not show
+    # "processing" forever), but no claim ever includes the kind.
+    assert store.requeue_calls == [(JOB_KIND_TRANSCRIBE, JOB_KIND_BOOK_INGEST)]
+    assert all(kinds == (JOB_KIND_TRANSCRIBE,) for kinds in store.claim_kinds)
+
+
+def test_startup_requeue_includes_book_kind_when_enabled() -> None:
+    clock = FakeClock()
+    store = FakeStore()
+
+    make_worker(
+        store, lambda p, r: Transcript("x", 0.0), clock, book_handler=lambda payload: None
+    ).run(deadline_in(clock, 5))
+
+    assert store.requeue_calls == [(JOB_KIND_TRANSCRIBE, JOB_KIND_BOOK_INGEST)]
+
+
+def test_book_failure_uses_the_shared_retry_policy() -> None:
+    clock = FakeClock()
+    store = FakeStore([make_book_job(job_id=1, attempts=1)])
+
+    def handler(payload: BookIngestPayload) -> None:
+        raise RuntimeError("ollama down")
+
+    make_worker(store, lambda p, r: Transcript("x", 0.0), clock, book_handler=handler).run(
+        deadline_in(clock, 60)
+    )
+
+    job_id, last_error, retry_at = store.failed[0]
+    assert job_id == 1
+    assert last_error == "ollama down"
+    assert retry_at == START + timedelta(minutes=1)  # linear-minutes backoff
+    assert store.done == []
+
+
+def test_book_failure_at_attempts_ceiling_is_terminal() -> None:
+    clock = FakeClock()
+    store = FakeStore([make_book_job(job_id=1, attempts=3)])
+
+    def handler(payload: BookIngestPayload) -> None:
+        raise RuntimeError("still broken")
+
+    make_worker(store, lambda p, r: Transcript("x", 0.0), clock, book_handler=handler).run(
+        deadline_in(clock, 60)
+    )
+    assert store.failed[0][2] is None
+
+
+def test_book_permanent_error_is_terminal() -> None:
+    clock = FakeClock()
+    store = FakeStore([make_book_job(job_id=1, attempts=1)])
+
+    def handler(payload: BookIngestPayload) -> None:
+        raise PermanentJobError("PDF not found on the Pi (HTTP 404)")
+
+    make_worker(store, lambda p, r: Transcript("x", 0.0), clock, book_handler=handler).run(
+        deadline_in(clock, 60)
+    )
+    assert store.failed == [(1, "PDF not found on the Pi (HTTP 404)", None)]
+
+
+def test_book_malformed_payload_fails_terminally_without_calling_handler() -> None:
+    clock = FakeClock()
+    bad = Job(
+        id=1,
+        kind=JOB_KIND_BOOK_INGEST,
+        payload={"file_path": "/data/books/x.pdf"},  # title missing
+        status="running",
+        attempts=1,
+        last_error=None,
+        run_after=START,
+        created_at=START,
+    )
+    store = FakeStore([bad])
+    calls: list[BookIngestPayload] = []
+
+    make_worker(store, lambda p, r: Transcript("x", 0.0), clock, book_handler=calls.append).run(
+        deadline_in(clock, 60)
+    )
+
+    assert calls == []
+    assert store.failed[0][2] is None  # permanent
+
+
+def test_one_failing_book_job_does_not_kill_the_drain() -> None:
+    clock = FakeClock()
+    store = FakeStore(
+        [make_book_job(job_id=1), make_book_job(job_id=2, file_path="/data/books/b.pdf")]
+    )
+
+    def handler(payload: BookIngestPayload) -> None:
+        if payload.filename == "learning-go.pdf":
+            raise RuntimeError("boom")
+
+    make_worker(store, lambda p, r: Transcript("x", 0.0), clock, book_handler=handler).run(
+        deadline_in(clock, 60)
+    )
+
+    assert store.failed[0][0] == 1
+    assert store.done == [2]
+
+
+def test_deadline_stops_book_claims_but_lets_ingest_finish() -> None:
+    clock = FakeClock()
+    deadline = deadline_in(clock, 60)
+    store = FakeStore([make_book_job(job_id=1), make_book_job(job_id=2)])
+
+    def slow_handler(payload: BookIngestPayload) -> None:
+        clock.advance(3600)  # the in-flight ingest runs past the deadline
+
+    make_worker(store, lambda p, r: Transcript("x", 0.0), clock, book_handler=slow_handler).run(
+        deadline
+    )
+
+    assert [j.id for j in store.claims] == [1]  # job 2 waits for the next night
+    assert store.done == [1]
+
+
+def test_book_claim_error_ends_the_drain_but_not_the_night() -> None:
+    class BrokenBookClaimStore(FakeStore):
+        def claim_next(self, *kinds: str) -> Job | None:
+            if JOB_KIND_BOOK_INGEST in kinds:
+                raise RuntimeError("db hiccup")
+            return super().claim_next(*kinds)
+
+    clock = FakeClock()
+    store = BrokenBookClaimStore([make_job(job_id=1)])
+
+    make_worker(
+        store, lambda p, r: Transcript("text", 10.0), clock, book_handler=lambda payload: None
+    ).run(deadline_in(clock, 60))
+
+    assert store.done == [1]  # the transcribe loop still ran
+
+
+def test_book_mark_done_failure_is_logged_not_fatal() -> None:
+    class FlakyStore(FakeStore):
+        def mark_done(self, job_id: int) -> None:
+            raise RuntimeError("connection lost")
+
+    clock = FakeClock()
+    store = FlakyStore([make_book_job(job_id=1), make_book_job(job_id=2)])
+
+    make_worker(
+        store, lambda p, r: Transcript("x", 0.0), clock, book_handler=lambda payload: None
+    ).run(deadline_in(clock, 60))
+
+    # Both processed; neither done nor failed (row stays running, swept
+    # back to pending at the next start — re-ingest is idempotent).
+    assert [j.id for j in store.claims] == [1, 2]
+    assert store.failed == []
 
 
 # --- deadline helpers -------------------------------------------------------

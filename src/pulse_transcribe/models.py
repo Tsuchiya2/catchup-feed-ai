@@ -1,6 +1,7 @@
-"""Shared value types: the jobs payload contract and the transcript result."""
+"""Shared value types: the jobs payload contracts and the transcript result."""
 
 import json
+import posixpath
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -65,6 +66,62 @@ class TranscribePayload:
             )
 
         return cls(article_id=article_id, media_url=media_url.strip(), source_kind=source_kind)
+
+
+@dataclass(frozen=True, slots=True)
+class BookIngestPayload:
+    """jobs.payload for kind='book_ingest' (D-25).
+
+    Contract owner: backend entity.BookIngestPayload
+    (catchup-feed-backend/internal/domain/entity/job.go). Exactly these
+    keys; renames are a cross-repo breaking change.
+
+    file_path is the canonical absolute path of the PDF **as seen by the
+    Pi server** (BOOKS_DIR + sanitized filename) — the identity key of the
+    book (books.file_path). The Mac worker never reads this path from its
+    own filesystem: it downloads the PDF from the tailnet-only endpoint
+    GET {BOOKS_PRIVATE_BASE_URL}/private/books/{filename}.
+    """
+
+    file_path: str
+    title: str
+
+    @property
+    def filename(self) -> str:
+        """The basename of the Pi path — the /private/books/{filename} segment.
+
+        posixpath, not os.path: the payload path is a Pi (Linux) path
+        regardless of what OS the worker runs on.
+        """
+        return posixpath.basename(self.file_path)
+
+    @classmethod
+    def parse(cls, raw: object) -> BookIngestPayload:
+        """Parse a jobs.payload value (dict from psycopg jsonb, or a JSON string).
+
+        Raises PayloadError (permanent: retrying cannot fix a bad payload).
+        """
+        if isinstance(raw, str | bytes):
+            try:
+                raw = json.loads(raw)
+            except ValueError as exc:
+                raise PayloadError(f"payload is not valid JSON: {exc}") from exc
+        if not isinstance(raw, dict):
+            raise PayloadError(f"payload must be a JSON object, got {type(raw).__name__}")
+
+        file_path = raw.get("file_path")
+        if not isinstance(file_path, str) or not file_path.strip():
+            raise PayloadError(f"payload.file_path must be a non-empty string, got {file_path!r}")
+        file_path = file_path.strip()
+        basename = posixpath.basename(file_path)
+        if not basename or basename in (".", ".."):
+            raise PayloadError(f"payload.file_path has no usable filename: {file_path!r}")
+
+        title = raw.get("title")
+        if not isinstance(title, str) or not title.strip():
+            raise PayloadError(f"payload.title must be a non-empty string, got {title!r}")
+
+        return cls(file_path=file_path, title=title.strip())
 
 
 @dataclass(frozen=True, slots=True)
