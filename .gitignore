@@ -86,3 +86,15 @@ service-account*.json
 # Build artifacts
 *.tar
 *.tar.gz
+
+# Book PDFs (never commit these; tests synthesize PDFs at runtime)
+*.pdf
+
+# Audio / video (transient transcription media)
+*.mp3
+*.m4a
+*.wav
+*.flac
+*.ogg
+*.webm
+*.mp4

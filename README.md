@@ -98,7 +98,7 @@ uv run pulse-books ingest ~/books/learning-go.pdf --title "Learning Go"
 uv run pulse-books search "goroutine とチャネルの違い" --top-k 5
 ```
 
-- テキスト抽出は **PyMuPDF**。実書籍検証で pypdf は埋め込みフォントの CID→Unicode を解決できず日本語書籍の 80〜98% のページが文字化けしたため全面切替。**PyMuPDF は AGPL-3.0** — catchup-feed は個人利用・非配布のため許容(親裁定。再配布・サービス化する場合は要再検討)
+- テキスト抽出は **PyMuPDF**。実書籍検証で pypdf は埋め込みフォントの CID→Unicode を解決できず日本語書籍の 80〜98% のページが文字化けしたため全面切替。**PyMuPDF は AGPL-3.0** — 本リポジトリ自体を AGPL-3.0 で公開して準拠(「ライセンス」節参照)
 - 暗号化 PDF(C-15 の精緻化): まず空パスワードで復号を試み、開けたら取り込む。市販の DRM フリー PDF に多いオーナーパスワードのみの暗号化(閲覧は自由)は正当な対象。実パスワードが必要な PDF(実質 DRM)のみ拒否
 - 抽出品質のヒューリスティクス警告: CJK 比率が異常に低い/置換不能文字が多いページは「garbled」として warning ログに出る(エラーにはしない)
 - 同じ PDF の再取り込みは既存 book の置き換え(chunks 削除→再投入。冪等)。同一性キーは **PDF の絶対パス**(`books.file_path`。CLI は Mac 上の実パス、ダッシュボード経由は payload の Pi 正準パス `BOOKS_DIR/<ファイル名>`)なので、同じ本を別パスから取り込むと別 book として重複する点に注意
@@ -153,7 +153,7 @@ CI(`.github/workflows/ci.yml`)は uv で依存を同期し、ruff + mypy(strict)
 
 ## ライセンス
 
-本リポジトリは catchup-feed の個人利用・非配布コンポーネントであり、再配布を前提としない。依存の **PyMuPDF は AGPL-3.0** である点に注意(個人利用・非配布のため許容。再配布・サービス化する場合は要再検討)。
+本リポジトリは **GNU AGPL-3.0** で公開する(全文は [`LICENSE`](LICENSE))。依存の **PyMuPDF が AGPL-3.0** であるため、本リポジトリ自体も同ライセンスとすることで準拠している。
 
 旧 catchup-ai(Cloud Run 上の gRPC AI サービス)のコードは Phase 2 の減量で削除済み。経緯は親リポジトリの `docs/ai-inventory.md` を、必要なら git 履歴を参照。
 </content>
