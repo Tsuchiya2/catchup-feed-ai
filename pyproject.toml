@@ -7,6 +7,11 @@ authors = [
     { name = "tsuchiya-yu2", email = "yuji2tsuchiya@gmail.com" }
 ]
 requires-python = ">=3.14"
+# PEP 639 SPDX expression. AGPL because pymupdf (a runtime dependency below)
+# is AGPL-3.0; LICENSE holds the verbatim license text and NOTICE the
+# project's own copyright notice + third-party attribution.
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE"]
 # Runtime dependencies: only what the code actually imports (§7 依存の刷新).
 # pydantic / python-dotenv are NOT declared: pulse code imports neither
 # directly (pydantic-settings pulls both transitively).

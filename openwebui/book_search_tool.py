@@ -2,7 +2,7 @@
 title: Pulse Book Search
 author: pulse
 version: 0.1.0
-license: MIT
+license: AGPL-3.0-or-later
 description: 取り込み済み書籍(Pi の book_chunks)を cosine 類似検索して抜粋を返す(A-23)
 requirements: psycopg[binary]>=3.2
 """
