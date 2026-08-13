@@ -3,10 +3,11 @@
     pulse-books ingest <pdf> [--title TITLE]   # PDF → chunks → embeddings → Pi pgvector
     pulse-books search <query> [--top-k 5]     # cosine search over book_chunks
 
-Runs by hand on the Mac (unlike the transcribe worker there is no nightly
-schedule — a book is ingested once). `search` exists to verify an ingest
-end to end before the Open WebUI integration (next task) reuses
-db.SEARCH_SQL.
+Runs by hand on the Mac for PDFs that live on the Mac. The other route into
+the same pipeline is the dashboard upload (D-25): the backend enqueues
+kind='book_ingest' and pulse_transcribe.book_ingest calls ingest() below
+with file_path_key set to the Pi-canonical path. `search` verifies an
+ingest end to end; the Open WebUI tool (A-23) reuses db.SEARCH_SQL.
 
 C-12: the PDF text and its embeddings only ever travel Mac → Pi (Tailscale).
 No cloud API is involved anywhere in this pipeline.

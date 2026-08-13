@@ -11,9 +11,9 @@
 catchup-feed における ai は 2 つの入力パイプラインを提供する。
 
 1. **transcribe worker**(`src/pulse_transcribe/`)
-   Pi の Postgres の `jobs` テーブル(`kind='transcribe'`)を poll し、YouTube / ポッドキャストを **faster-whisper** で文字起こしして `articles.content` に保存する。以降は backend の既存要約連鎖が処理し、毎朝のラジオに記事と同列で合流する。
+   Pi の Postgres の `jobs` テーブルを poll する。claim するのは `kind='transcribe'` と `kind='book_ingest'` の 2 種だけ(他 kind は Pi の worker の領分)。transcribe は YouTube / ポッドキャストを **faster-whisper** で文字起こしして `articles.content` に保存し、以降は backend の既存要約連鎖が処理して毎朝のラジオに記事と同列で合流する。book_ingest(D-25)はダッシュボードからアップロードされた PDF を Pi から一時取得し、下の 2 と同じパイプラインへ流す。
 2. **書籍 PDF RAG 取り込み**(`src/pulse_books/`)
-   DRM フリー PDF を **PyMuPDF** でテキスト抽出 → チャンク化 → **Ollama**(bge-m3)で embedding → Pi の pgvector(`books` / `book_chunks`)に保存。スマホから Open WebUI 経由でローカル LLM と壁打ちして書籍を消化する。
+   DRM フリー PDF を **PyMuPDF** でテキスト抽出 → チャンク化 → **Ollama**(bge-m3)で embedding → Pi の pgvector(`books` / `book_chunks`)に保存。スマホから Open WebUI 経由でローカル LLM と壁打ちして書籍を消化する(検索 Tool は `openwebui/book_search_tool.py`、A-23)。
 
 ### 設計原則(catchup-feed から継承)
 
@@ -101,6 +101,7 @@ uv run pulse-books search "goroutine とチャネルの違い" --top-k 5
 - テキスト抽出は **PyMuPDF**。実書籍検証で pypdf は埋め込みフォントの CID→Unicode を解決できず日本語書籍の 80〜98% のページが文字化けしたため全面切替。**PyMuPDF は AGPL-3.0** — 本リポジトリ自体を AGPL-3.0 で公開して準拠(「ライセンス」節参照)
 - 暗号化 PDF(C-15 の精緻化): まず空パスワードで復号を試み、開けたら取り込む。市販の DRM フリー PDF に多いオーナーパスワードのみの暗号化(閲覧は自由)は正当な対象。実パスワードが必要な PDF(実質 DRM)のみ拒否
 - 抽出品質のヒューリスティクス警告: CJK 比率が異常に低い/置換不能文字が多いページは「garbled」として warning ログに出る(エラーにはしない)
+- チャンク化は**段落戦略**(`TextChunker` の `PARAGRAPH`)。目標 1000 文字 / 下限 100 文字(下回るチャンクは後続とマージ)。ページ境界は空行として段落境界を兼ねる。1000 文字を超える段落は**日本語対応の文分割**にフォールバックし(「。」「!」「?」を境界とし、閉じ括弧は文に付けたまま残す)、それでも収まらない単一文だけが最終手段の固定長分割に落ちる
 - 同じ PDF の再取り込みは既存 book の置き換え(chunks 削除→再投入。冪等)。同一性キーは **PDF の絶対パス**(`books.file_path`。CLI は Mac 上の実パス、ダッシュボード経由は payload の Pi 正準パス `BOOKS_DIR/<ファイル名>`)なので、同じ本を別パスから取り込むと別 book として重複する点に注意
 - embedding は Ollama の **bge-m3**(D-12、1024次元)。次元が違うモデルを誤設定した場合は書き込み前に即エラー(`book_chunks` は `vector(1024)`)
 - `books` / `book_chunks` テーブルの作成は **backend のマイグレーションの責務**。未適用ならその旨のエラーで止まる
@@ -129,7 +130,7 @@ uv run pulse-books search "goroutine とチャネルの違い" --top-k 5
 
 壁打ち中の LLM が `book_chunks` を検索できるようにする Open WebUI Tool が `openwebui/book_search_tool.py`。単一ファイル自己完結(サンドボックスに貼り付けるため `pulse_books` を import できない)で、SQL・1024次元ガードは `pulse_books.db.SEARCH_SQL` / `pulse_books.embedding` と同じ意味論を複製している(一致は `tests/test_openwebui_tool.py` のパリティテストが担保)。
 
-登録手順・Valves 設定・動作確認の詳細は本ファイル末尾の履歴と `docs/pulse-phase2-design.md` を参照。要点:
+登録手順(所要5分。マージ済みの `openwebui/book_search_tool.py` をそのまま使う):
 
 1. **Tool 登録**: 管理者でログイン → Workspace → Tools → `+`(New Tool)→ `book_search_tool.py` を丸ごと貼り付けて Save(フロントマターの `requirements: psycopg[binary]>=3.2` により依存が自動インストール)
 2. **Valves 設定**: `DATABASE_URL`(必須、Mac の `~/pulse/.env` と同値)/ `OLLAMA_HOST`(既定 `http://host.docker.internal:11434`)/ `EMBEDDING_MODEL`(既定 `bge-m3`)/ `TOP_K`(既定 5)
@@ -153,8 +154,13 @@ CI(`.github/workflows/ci.yml`)は uv で依存を同期し、ruff + mypy(strict)
 
 ## ライセンス
 
-本リポジトリは **GNU AGPL-3.0** で公開する(全文は [`LICENSE`](LICENSE))。依存の **PyMuPDF が AGPL-3.0** であるため、本リポジトリ自体も同ライセンスとすることで準拠している。
+本リポジトリは **GNU AGPL-3.0(or later)** で公開する。依存の **PyMuPDF が AGPL-3.0** であるため、本リポジトリ自体も同ライセンスとすることで準拠している。
+
+| ファイル | 内容 |
+|---|---|
+| [`LICENSE`](LICENSE) | AGPL-3.0 の全文(**逐語のまま**。GitHub 等の自動ライセンス判定を通すため一切加筆しない) |
+| [`NOTICE`](NOTICE) | 本プロジェクトの著作権表示・AGPL 適用告知と、PyMuPDF についてのサードパーティ表記 |
+
+パッケージメタデータにも `license = "AGPL-3.0-or-later"`(PEP 639)として宣言しており、ビルドした wheel には `LICENSE` と `NOTICE` が同梱される。
 
 旧 catchup-ai(Cloud Run 上の gRPC AI サービス)のコードは Phase 2 の減量で削除済み。経緯は親リポジトリの `docs/ai-inventory.md` を、必要なら git 履歴を参照。
-</content>
-</invoke>

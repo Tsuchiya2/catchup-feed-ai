@@ -3,8 +3,8 @@
 PyMuPDF replaced pypdf after real-book validation: Japanese books with
 embedded fonts came out 80–98% garbled through pypdf (unresolved
 CID→Unicode mappings, "ͭ͘…"-style text), while PyMuPDF extracted the same
-pages cleanly. PyMuPDF is AGPL-3.0 — acceptable for this personal,
-non-distributed tool (親裁定; see README).
+pages cleanly. PyMuPDF is AGPL-3.0 — this repository is itself published
+under AGPL-3.0 to comply (see LICENSE / README).
 
 Encryption policy (C-15, refined): C-15 exists to keep DRM'd books out.
 Commercial DRM-free PDFs are often encrypted with an *owner* password only

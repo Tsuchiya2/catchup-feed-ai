@@ -21,8 +21,10 @@ from psycopg import errors as pg_errors
 from pulse_books.errors import SchemaMissingError
 
 # Cosine similarity search over book chunks. Kept as a reusable module-level
-# constant: the Open WebUI tool/function integration (next task) is expected
-# to reuse this exact SQL. Parameters: query (vector literal), top_k.
+# constant: openwebui/book_search_tool.py (A-23) carries a verbatim copy of
+# this SQL — it runs in the Open WebUI sandbox and cannot import pulse_books
+# — and tests/test_openwebui_tool.py asserts the two stay identical. Change
+# both or neither. Parameters: query (vector literal), top_k.
 # `<=>` is pgvector's cosine distance; similarity = 1 - distance.
 SEARCH_SQL = """
 SELECT c.book_id, b.title, c.position, c.content,
