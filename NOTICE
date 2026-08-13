@@ -22,6 +22,12 @@ unmodified so that automated license detection recognises it).
 
 Third-party notice
 
-This program links PyMuPDF (https://pymupdf.readthedocs.io/), which is
-distributed under the GNU AGPL-3.0. That is why this repository is itself
-published under the AGPL-3.0.
+This program uses PyMuPDF (https://pymupdf.readthedocs.io/), maintained by
+Artifex Software, Inc. PyMuPDF is dual-licensed: it may be used under the
+GNU Affero General Public License v3.0, or under a commercial license
+obtained from Artifex.
+
+This project takes the AGPL option, and is therefore itself licensed under
+AGPL-3.0-or-later. Releasing this project under different terms would
+require either a commercial PyMuPDF license from Artifex, or dropping the
+dependency.

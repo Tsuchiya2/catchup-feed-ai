@@ -32,7 +32,7 @@ catchup-feed における ai は 2 つの入力パイプラインを提供する
 | 文字起こし | faster-whisper `>=1.2.1`(モデル: large-v3-turbo, D-11) |
 | メディア取得 | yt-dlp `>=2026.7.4`(YouTube 字幕 + 音声ダウンロード) |
 | DB ドライバ | psycopg[binary] `>=3.3.4`(Pi PostgreSQL / pgvector) |
-| PDF 抽出 | PyMuPDF `>=1.28.0`(AGPL-3.0) |
+| PDF 抽出 | PyMuPDF `>=1.28.0`(AGPL v3.0 / 商用の二重ライセンス。本リポジトリは AGPL 側) |
 | 設定 | pydantic-settings `>=2.14.2` |
 | ロギング | structlog `>=26.1.0` |
 | embedding | Ollama(bge-m3, 1024次元, D-12)※外部プロセス |
@@ -98,7 +98,7 @@ uv run pulse-books ingest ~/books/learning-go.pdf --title "Learning Go"
 uv run pulse-books search "goroutine とチャネルの違い" --top-k 5
 ```
 
-- テキスト抽出は **PyMuPDF**。実書籍検証で pypdf は埋め込みフォントの CID→Unicode を解決できず日本語書籍の 80〜98% のページが文字化けしたため全面切替。**PyMuPDF は AGPL-3.0** — 本リポジトリ自体を AGPL-3.0 で公開して準拠(「ライセンス」節参照)
+- テキスト抽出は **PyMuPDF**。実書籍検証で pypdf は埋め込みフォントの CID→Unicode を解決できず日本語書籍の 80〜98% のページが文字化けしたため全面切替。**PyMuPDF は AGPL v3.0 と商用の二重ライセンス**で、本リポジトリは AGPL 側を選択している(「ライセンス」節参照)
 - 暗号化 PDF(C-15 の精緻化): まず空パスワードで復号を試み、開けたら取り込む。市販の DRM フリー PDF に多いオーナーパスワードのみの暗号化(閲覧は自由)は正当な対象。実パスワードが必要な PDF(実質 DRM)のみ拒否
 - 抽出品質のヒューリスティクス警告: CJK 比率が異常に低い/置換不能文字が多いページは「garbled」として warning ログに出る(エラーにはしない)
 - チャンク化は**段落戦略**(`TextChunker` の `PARAGRAPH`)。目標 1000 文字 / 下限 100 文字(下回るチャンクは後続とマージ)。ページ境界は空行として段落境界を兼ねる。1000 文字を超える段落は**日本語対応の文分割**にフォールバックし(「。」「!」「?」を境界とし、閉じ括弧は文に付けたまま残す)、それでも収まらない単一文だけが最終手段の固定長分割に落ちる
@@ -154,7 +154,7 @@ CI(`.github/workflows/ci.yml`)は uv で依存を同期し、ruff + mypy(strict)
 
 ## ライセンス
 
-本リポジトリは **GNU AGPL-3.0(or later)** で公開する。依存の **PyMuPDF が AGPL-3.0** であるため、本リポジトリ自体も同ライセンスとすることで準拠している。
+本リポジトリは **GNU AGPL-3.0(or later)** で公開する。依存の **PyMuPDF は「AGPL v3.0」と「Artifex の商用ライセンス」の二重ライセンス**で、本リポジトリは **AGPL 側を選択**しているため、自身も同ライセンスで公開している。別のライセンスで出したくなった場合は、Artifex から商用ライセンスを取得するか、PyMuPDF への依存を外すかのいずれかが必要になる。
 
 | ファイル | 内容 |
 |---|---|

@@ -7,9 +7,11 @@ authors = [
     { name = "tsuchiya-yu2", email = "yuji2tsuchiya@gmail.com" }
 ]
 requires-python = ">=3.14"
-# PEP 639 SPDX expression. AGPL because pymupdf (a runtime dependency below)
-# is AGPL-3.0; LICENSE holds the verbatim license text and NOTICE the
-# project's own copyright notice + third-party attribution.
+# PEP 639 SPDX expression. pymupdf (a runtime dependency below) is
+# dual-licensed AGPL-3.0 / commercial-from-Artifex; this project takes the
+# AGPL option, so it is AGPL itself. LICENSE holds the verbatim license
+# text and NOTICE the project's own copyright notice + third-party
+# attribution.
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE", "NOTICE"]
 # Runtime dependencies: only what the code actually imports (§7 依存の刷新).
@@ -19,8 +21,9 @@ dependencies = [
     "faster-whisper>=1.2.1",   # local transcription (D-11: large-v3-turbo)
     "psycopg[binary]>=3.3.4",  # Pi PostgreSQL (jobs + books/book_chunks)
     "pydantic-settings>=2.14.2",
-    # Book PDF text extraction (P-4). PyMuPDF is AGPL-3.0 — this repository
-    # is itself licensed AGPL-3.0 (see LICENSE). Replaced pypdf (BSD):
+    # Book PDF text extraction (P-4). PyMuPDF is dual-licensed (AGPL-3.0 or
+    # a commercial Artifex license); this repository takes the AGPL option
+    # and is itself AGPL-3.0 (see LICENSE / NOTICE). Replaced pypdf (BSD):
     # pypdf garbled 80–98% of pages on real Japanese books (embedded-font
     # CID→Unicode mappings it cannot resolve); PyMuPDF extracts them cleanly.
     "pymupdf>=1.28.0",
