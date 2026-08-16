@@ -6,6 +6,10 @@
 
 設計の正は親リポジトリの `docs/pulse-phase2-design.md`(特に §5–§7)と `docs/decisions.md`。実装がこれらと食い違う場合は実装が間違っている。
 
+![Catchup Feed の処理フロー。RSS・YouTube・ポッドキャスト・Web の各ソースから自動収集し、AI が日本語化・要約・台本生成を行い、VOICEVOX で音声化して各プラットフォームへ届ける](docs/images/system-overview.webp)
+
+図のうち本リポジトリが担うのは **左端の YouTube / ポッドキャストを記事と同じ土俵に載せる部分**で、faster-whisper で文字起こしして `articles.content` に入れたあとは backend の既存要約連鎖に合流する。もう一つの役割である**書籍 PDF の RAG 取り込みは図に現れない** — 番組の公開部分には載らない私的データで、スマホから Open WebUI 経由でローカル LLM と壁打ちするための入力だからである(C-12)。中央の要約・台本生成・音声合成は [catchup-feed-backend](https://github.com/Tsuchiya2/catchup-feed-backend) の担当。
+
 ## このリポジトリの役割
 
 catchup-feed における ai は 2 つの入力パイプラインを提供する。
